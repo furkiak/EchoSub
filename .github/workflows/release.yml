@@ -44,6 +44,15 @@ jobs:
       - name: Install Ninja (Windows)
         if: runner.os == 'Windows'
         run: choco install ninja -y --no-progress
+      - name: SPIRV-Headers (Windows)   # ggml-vulkan find_package(SPIRV-Headers) ister; SDK cmake yapılandırması içermiyor
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -e
+          git clone --depth 1 --branch vulkan-sdk-1.4.309.0 https://github.com/KhronosGroup/SPIRV-Headers.git "$RUNNER_TEMP/spirv-src"
+          cmake -S "$RUNNER_TEMP/spirv-src" -B "$RUNNER_TEMP/spirv-build" -G Ninja -DCMAKE_INSTALL_PREFIX="C:/spirv-headers"
+          cmake --install "$RUNNER_TEMP/spirv-build"
+          echo "CMAKE_PREFIX_PATH=C:/spirv-headers" >> "$GITHUB_ENV"
 
       - name: Build app
         working-directory: app
