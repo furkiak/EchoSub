@@ -63,7 +63,7 @@ Everything runs as local processes talking over `127.0.0.1`. The only network tr
 
 | | Minimum (usable) | Recommended |
 |---|---|---|
-| **OS** | Windows 10/11 · Linux with PipeWire or PulseAudio · macOS 14.6+ | Windows 11 |
+| **OS** | Windows 10/11 · Linux (glibc 2.38+, e.g. Ubuntu 24.04) with PipeWire or PulseAudio · macOS 14.6+ | Windows 11 |
 | **GPU** | Any Vulkan 1.2 GPU with about 4 GB VRAM (AMD, NVIDIA, Intel) or Apple Silicon | 8 GB+ VRAM (16 GB for *quality* mode) |
 | **CPU / RAM** | 4 cores, 8 GB RAM (CPU-only works but is much slower) | 8+ cores, 16 GB RAM |
 | **Disk** | about 3 GB (*fast*/*balanced*), about 8 GB (*quality*) | SSD |

@@ -1,0 +1,3 @@
+# macOS: ONNX Runtime ve çevre kütüphaneleri 13.4+ için derlenmiş; sistem sesi yakalama zaten 14.6+ ister.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "14.0"

@@ -63,7 +63,7 @@ Her şey `127.0.0.1` üzerinden konuşan yerel süreçlerdir. Tek ağ trafiği, 
 
 | | Asgari (kullanılabilir) | Önerilen |
 |---|---|---|
-| **İşletim sistemi** | Windows 10/11 · PipeWire ya da PulseAudio'lu Linux · macOS 14.6+ | Windows 11 |
+| **İşletim sistemi** | Windows 10/11 · PipeWire ya da PulseAudio'lu Linux (glibc 2.38+, örn. Ubuntu 24.04) · macOS 14.6+ | Windows 11 |
 | **Ekran kartı** | Yaklaşık 4 GB VRAM'li herhangi bir Vulkan 1.2 kartı (AMD, NVIDIA, Intel) ya da Apple Silicon | 8 GB+ VRAM (*kaliteli* mod için 16 GB) |
 | **İşlemci / RAM** | 4 çekirdek, 8 GB RAM (yalnızca işlemciyle çalışır ama çok daha yavaştır) | 8+ çekirdek, 16 GB RAM |
 | **Disk** | Yaklaşık 3 GB (*hızlı*/*dengeli*), yaklaşık 8 GB (*kaliteli*) | SSD |
