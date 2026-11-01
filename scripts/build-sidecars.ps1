@@ -23,5 +23,5 @@ function Build([string]$name, [string]$repo, [string]$target, [string]$sub, [str
 }
 New-Item -ItemType Directory -Force $Src | Out-Null
 Build 'whisper.cpp' 'https://github.com/ggml-org/whisper.cpp' 'whisper-server' 'whisper' @('-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_EXAMPLES=ON')
-Build 'llama.cpp' 'https://github.com/ggml-org/llama.cpp' 'llama-server' 'llama' @('-DLLAMA_CURL=OFF', '-DLLAMA_BUILD_TESTS=OFF', '-DLLAMA_BUILD_EXAMPLES=OFF', '-DLLAMA_BUILD_SERVER=ON')
+Build 'llama.cpp' 'https://github.com/ggml-org/llama.cpp' 'llama-server' 'llama' @('-DLLAMA_CURL=OFF', '-DLLAMA_OPENSSL=OFF', '-DLLAMA_BUILD_TESTS=OFF', '-DLLAMA_BUILD_EXAMPLES=OFF', '-DLLAMA_BUILD_SERVER=ON')
 Write-Host "tamam: $out"
