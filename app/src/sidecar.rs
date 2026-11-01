@@ -94,20 +94,39 @@ fn spawn_logged(mut cmd: Command, log: PathBuf) -> std::io::Result<Child> {
     cmd.spawn()
 }
 
-pub fn wait_http(url: &str, timeout: Duration) -> bool {
+#[derive(Debug, PartialEq, Eq)]
+pub enum Wait {
+    Ready,
+    /// Sunucu süreci hazır olmadan sonlandı (çöktü).
+    Died,
+    Timeout,
+}
+
+/// `url` 200 dönene kadar bekler. `alive` false dönerse süreç çökmüş demektir; zaman aşımını beklemeden çıkar.
+pub fn wait_http(url: &str, timeout: Duration, mut alive: impl FnMut() -> bool) -> Wait {
     let t0 = Instant::now();
     while t0.elapsed() < timeout {
         if let Ok(r) = ureq::get(url).timeout(Duration::from_secs(2)).call() {
             if r.status() == 200 {
-                return true;
+                return Wait::Ready;
             }
+        }
+        if !alive() {
+            return Wait::Died;
         }
         std::thread::sleep(Duration::from_millis(400));
     }
-    false
+    Wait::Timeout
 }
 
 impl Sidecars {
+    pub fn whisper_alive(&mut self) -> bool {
+        matches!(self.whisper.as_mut().map(|c| c.try_wait()), Some(Ok(None)))
+    }
+    pub fn llama_alive(&mut self) -> bool {
+        matches!(self.llama.as_mut().map(|c| c.try_wait()), Some(Ok(None)))
+    }
+
     pub fn stop(&mut self) {
         for c in [self.whisper.take(), self.llama.take()].into_iter().flatten() {
             let mut c = c;

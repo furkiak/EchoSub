@@ -5,6 +5,9 @@
 param([string]$Src = '', [ValidateSet('vulkan', 'cuda', 'cpu')][string]$Backend = 'vulkan')
 $ErrorActionPreference = 'Stop'
 $gpu = switch ($Backend) { 'vulkan' { '-DGGML_VULKAN=1' } 'cuda' { '-DGGML_CUDA=1' } default { '-DGGML_VULKAN=0' } }
+# Paketler başka bilgisayarlarda çalışacağı için derleyen makinenin CPU'suna özel (-march=native) kod üretilmez;
+# aksi halde (ör. CI'daki AVX-512) daha eski/farklı CPU'larda "illegal instruction" ile çöker. AVX2 tabanı (Haswell 2013+ / Zen 1+).
+$cpu = @('-DGGML_NATIVE=OFF', '-DGGML_AVX2=ON', '-DGGML_FMA=ON', '-DGGML_F16C=ON', '-DGGML_BMI2=ON')
 $root = (Resolve-Path "$PSScriptRoot\..").Path
 if (-not $Src) { $Src = "$root\build-src" }
 $out = if ($env:ECHOSUB_HOME) { $env:ECHOSUB_HOME } elseif (Test-Path "$root\app") { "$root\app\runtime" } else { "$root\runtime" }
@@ -13,7 +16,7 @@ if ($Backend -eq 'vulkan' -and -not $env:VULKAN_SDK) { throw 'VULKAN_SDK tanıml
 function Build([string]$name, [string]$repo, [string]$target, [string]$sub, [string[]]$extra) {
   if (-not (Test-Path "$Src\$name")) { git clone --depth 1 $repo "$Src\$name" }
   $b = "$Src\$name\build-echosub"
-  cmake -S "$Src\$name" -B $b -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl $gpu @extra
+  cmake -S "$Src\$name" -B $b -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl $gpu @cpu @extra
   if ($LASTEXITCODE) { throw "$name yapılandırılamadı" }
   cmake --build $b --target $target
   if ($LASTEXITCODE) { throw "$name derlenemedi" }

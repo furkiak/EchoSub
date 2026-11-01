@@ -18,9 +18,12 @@ case "$(uname -s)" in
   Darwin) GPU="-DGGML_METAL=1" ;;
   *) echo "Bu betik Linux/macOS içindir"; exit 1 ;;
 esac
+# Taşınabilir paket: derleyen makinenin CPU'suna özel kod üretme (CI'daki AVX-512 başka CPU'larda çöker). x86-64 için AVX2 tabanı.
+CPU=""
+if [ "$(uname -m)" = x86_64 ]; then CPU="-DGGML_NATIVE=OFF -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_BMI2=ON"; fi
 build() { # ad repo hedef
   [ -d "$SRC/$1" ] || git clone --depth 1 "$2" "$SRC/$1"
-  cmake -S "$SRC/$1" -B "$SRC/$1/build" -DCMAKE_BUILD_TYPE=Release $GPU \
+  cmake -S "$SRC/$1" -B "$SRC/$1/build" -DCMAKE_BUILD_TYPE=Release $GPU $CPU \
         -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_RPATH='$ORIGIN' -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
         -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON \
         -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON

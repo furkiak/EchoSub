@@ -4,6 +4,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.1]
+### Fixed
+- Release packages crashed with "illegal instruction" (the speech model never loaded) on CPUs that differ from the CI machine: the whisper.cpp / llama.cpp servers were built with the CI runner's CPU extensions. They are now built for a portable AVX2 baseline on x86-64.
+- A crashing speech/translation server is now reported right away (with a pointer to `runtime/logs`) instead of after a two-minute timeout.
+
 ## [0.2.0]
 ### Added
 - First-run model downloader: EchoSub detects missing models, shows what will be downloaded and asks before starting. Progress, cancel, resume after interruption, and automatic model loading when the download finishes. Reopen it from *Settings → Download / check models*; switching the quality preset opens it again if the new models are missing.

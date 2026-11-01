@@ -93,12 +93,20 @@ fn boot(app: AppHandle) {
     let started = st.sidecars.lock().unwrap().start_whisper(&st.paths, &s);
     match started {
         Ok(()) => {
-            if sidecar::wait_http(&format!("http://127.0.0.1:{WHISPER_PORT}/"), Duration::from_secs(120)) {
-                pipeline::warmup_whisper();
-                st.pipeline.whisper_ready.store(true, Ordering::Relaxed);
-            } else {
-                set_status(&app, "error", "Konuşma modeli yüklenemedi (zaman aşımı)");
-                return;
+            let url = format!("http://127.0.0.1:{WHISPER_PORT}/");
+            match sidecar::wait_http(&url, Duration::from_secs(120), || st.sidecars.lock().unwrap().whisper_alive()) {
+                sidecar::Wait::Ready => {
+                    pipeline::warmup_whisper();
+                    st.pipeline.whisper_ready.store(true, Ordering::Relaxed);
+                }
+                sidecar::Wait::Died => {
+                    set_status(&app, "error", "Konuşma sunucusu çöktü — ayrıntı: runtime/logs/whisper.log");
+                    return;
+                }
+                sidecar::Wait::Timeout => {
+                    set_status(&app, "error", "Konuşma modeli yüklenemedi (zaman aşımı)");
+                    return;
+                }
             }
         }
         Err(e) => {
@@ -111,12 +119,19 @@ fn boot(app: AppHandle) {
     let started = st.sidecars.lock().unwrap().start_llama(&st.paths, &s);
     match started {
         Ok(()) => {
-            if sidecar::wait_http(&format!("http://127.0.0.1:{LLAMA_PORT}/health"), Duration::from_secs(240)) {
-                pipeline::warmup_llama();
-                st.pipeline.llama_ready.store(true, Ordering::Relaxed);
-                set_status(&app, "ready", "Hazır");
-            } else {
-                set_status(&app, "warn", "Çeviri modeli yüklenemedi; yalnızca orijinal altyazı");
+            let url = format!("http://127.0.0.1:{LLAMA_PORT}/health");
+            match sidecar::wait_http(&url, Duration::from_secs(240), || st.sidecars.lock().unwrap().llama_alive()) {
+                sidecar::Wait::Ready => {
+                    pipeline::warmup_llama();
+                    st.pipeline.llama_ready.store(true, Ordering::Relaxed);
+                    set_status(&app, "ready", "Hazır");
+                }
+                sidecar::Wait::Died => {
+                    set_status(&app, "warn", "Çeviri sunucusu çöktü (runtime/logs/llama.log); yalnızca orijinal altyazı");
+                }
+                sidecar::Wait::Timeout => {
+                    set_status(&app, "warn", "Çeviri modeli yüklenemedi; yalnızca orijinal altyazı");
+                }
             }
         }
         Err(e) => set_status(&app, "warn", &format!("Çeviri kapalı: {e}")),
