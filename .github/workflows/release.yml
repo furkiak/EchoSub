@@ -15,7 +15,7 @@ jobs:
           - { os: macos-latest,   name: macos-arm64, ext: tar.gz }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: app }
@@ -43,14 +43,15 @@ jobs:
 
       - name: Build app
         working-directory: app
-        run: cargo build --release
+        shell: bash
+        run: bash ../scripts/ci-run.sh cargo build --release
       - name: Build whisper.cpp + llama.cpp servers (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./scripts/build-sidecars.ps1
+        shell: bash
+        run: bash scripts/ci-run.sh pwsh -File scripts/build-sidecars.ps1
       - name: Build whisper.cpp + llama.cpp servers (Unix)
         if: runner.os != 'Windows'
-        run: bash scripts/build-sidecars.sh
+        run: bash scripts/ci-run.sh bash scripts/build-sidecars.sh
 
       - name: Assemble package
         shell: bash
