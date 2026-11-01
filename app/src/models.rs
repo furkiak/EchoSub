@@ -2,7 +2,7 @@
 //! Yalnızca model dosyaları ağdan gelir; ses ve çeviri her zaman yerelde işlenir.
 
 use crate::settings::Settings;
-use crate::sidecar::Paths;
+use crate::sidecar::{Paths, VAD_FILE};
 use serde::Serialize;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
@@ -36,7 +36,7 @@ const CATALOG: &[Model] = &[
         file: "translategemma-4b-it-Q4_K_M.gguf",
         label: "Çeviri (4B)",
         url: "https://huggingface.co/bullerwins/translategemma-4b-it-GGUF/resolve/main/translategemma-4b-it-Q4_K_M.gguf",
-        mb: 2500,
+        mb: 2490,
     },
     Model {
         file: "translategemma-12b-it-Q4_K_M.gguf",
@@ -45,7 +45,7 @@ const CATALOG: &[Model] = &[
         mb: 7300,
     },
     Model {
-        file: "ggml-silero-v5.1.2.bin",
+        file: VAD_FILE,
         label: "Müzik/gürültü filtresi (VAD)",
         url: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin",
         mb: 1,
@@ -54,7 +54,7 @@ const CATALOG: &[Model] = &[
         file: "UVR-MDX-NET-Voc_FT.onnx",
         label: "Vokal ayırma (şarkılar için)",
         url: "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx",
-        mb: 57,
+        mb: 67,
     },
 ];
 
@@ -67,7 +67,7 @@ pub fn required(s: &Settings) -> Vec<Model> {
     let (whisper, translate) = s.model_files();
     let mut v: Vec<Model> = [whisper, translate].iter().filter_map(|f| find(f)).collect();
     if s.use_vad {
-        v.extend(find("ggml-silero-v5.1.2.bin"));
+        v.extend(find(VAD_FILE));
     }
     if s.use_separation {
         v.extend(find("UVR-MDX-NET-Voc_FT.onnx"));

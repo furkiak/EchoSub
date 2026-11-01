@@ -4,30 +4,37 @@
 
 use crate::settings::Settings;
 use std::fs::File;
-use std::path::PathBuf;
+use std::net::TcpStream;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 pub const WHISPER_PORT: u16 = 18080;
 pub const LLAMA_PORT: u16 = 18081;
+pub const VAD_FILE: &str = "ggml-silero-v5.1.2.bin";
 
 #[derive(Clone)]
 pub struct Paths {
     pub home: PathBuf,
 }
 
+/// Sunucular kendi klasörlerinde başlatılır (`current_dir`); göreli yol orada bozulur.
+fn absolute(p: PathBuf) -> PathBuf {
+    std::path::absolute(&p).unwrap_or(p)
+}
+
 impl Paths {
     /// ECHOSUB_HOME, yoksa <exe klasörü>/runtime, yoksa ./runtime.
     pub fn resolve() -> Paths {
         if let Ok(h) = std::env::var("ECHOSUB_HOME") {
-            return Paths { home: PathBuf::from(h) };
+            return Paths { home: absolute(PathBuf::from(h)) };
         }
         let beside_exe = std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|d| d.join("runtime")));
         match beside_exe {
             Some(p) if p.exists() => Paths { home: p },
-            _ => Paths { home: PathBuf::from("runtime") },
+            _ => Paths { home: absolute(PathBuf::from("runtime")) },
         }
     }
 
@@ -44,6 +51,18 @@ impl Paths {
     pub fn log_dir(&self) -> PathBuf {
         self.home.join("logs")
     }
+}
+
+/// Sunucunun çalışma klasörüne (`<home>/whisper`, `<home>/llama`) göre model yolu. whisper-server
+/// Windows'ta ASCII dışı karakterli (Türkçe kullanıcı adı gibi) mutlak yolları açamıyor; bu yol hep ASCII.
+fn model_arg(file: &str) -> PathBuf {
+    Path::new("..").join("models").join(file)
+}
+
+/// Başka bir süreç (önceki bir EchoSub'dan kalan sunucu gibi) bu portu dinliyor mu?
+fn port_busy(port: u16) -> bool {
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
 }
 
 #[derive(Default)]
@@ -146,16 +165,18 @@ impl Sidecars {
         if !model.exists() {
             return Err(format!("whisper modeli bulunamadı: {}", model.display()));
         }
+        if port_busy(WHISPER_PORT) {
+            return Err(format!("{WHISPER_PORT} portu başka bir program tarafından kullanılıyor"));
+        }
         let mut cmd = Command::new(&exe);
         lib_env(&mut cmd, exe.parent().unwrap());
         cmd.current_dir(exe.parent().unwrap())
-            .arg("-m").arg(&model)
+            .arg("-m").arg(model_arg(wm))
             .args(["--host", "127.0.0.1", "--port", &WHISPER_PORT.to_string()])
             .arg("-nlp")
             .args(["-nth", "0.6"]);
-        let vad = paths.model("ggml-silero-v5.1.2.bin");
-        if vad.exists() {
-            cmd.arg("-vm").arg(&vad);
+        if paths.model(VAD_FILE).exists() {
+            cmd.arg("-vm").arg(model_arg(VAD_FILE));
         }
         self.whisper = Some(
             spawn_logged(cmd, paths.log_dir().join("whisper.log")).map_err(|e| e.to_string())?,
@@ -175,10 +196,13 @@ impl Sidecars {
         if !model.exists() {
             return Err(format!("çeviri modeli bulunamadı: {}", model.display()));
         }
+        if port_busy(LLAMA_PORT) {
+            return Err(format!("{LLAMA_PORT} portu başka bir program tarafından kullanılıyor"));
+        }
         let mut cmd = Command::new(&exe);
         lib_env(&mut cmd, exe.parent().unwrap());
         cmd.current_dir(exe.parent().unwrap())
-            .arg("-m").arg(&model)
+            .arg("-m").arg(model_arg(lm))
             .args(["--host", "127.0.0.1", "--port", &LLAMA_PORT.to_string()])
             .args(["-ngl", "99", "-c", "4096", "-np", "1"])
             .arg("--no-webui");
@@ -192,5 +216,39 @@ impl Sidecars {
 impl Drop for Sidecars {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_arg_stays_relative_and_points_to_the_models_folder() {
+        let a = model_arg("m.bin");
+        assert!(a.is_relative());
+        assert_eq!(a, Path::new("..").join("models").join("m.bin"));
+    }
+
+    #[test]
+    fn relative_home_becomes_absolute() {
+        assert!(absolute(PathBuf::from("runtime")).is_absolute());
+    }
+
+    #[test]
+    fn port_busy_sees_a_listener() {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        assert!(port_busy(port));
+        drop(l);
+        assert!(!port_busy(port));
+    }
+
+    #[test]
+    fn wait_http_gives_up_when_the_process_dies() {
+        // Dinlenmeyen port: HTTP asla yanıt vermez; süreç öldüğü an zaman aşımını beklemeden döner.
+        let t0 = Instant::now();
+        assert_eq!(wait_http("http://127.0.0.1:9/", Duration::from_secs(30), || false), Wait::Died);
+        assert!(t0.elapsed() < Duration::from_secs(5));
     }
 }

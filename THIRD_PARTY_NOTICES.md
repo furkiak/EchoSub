@@ -1,7 +1,8 @@
 # Third-party components
 
 EchoSub itself is MIT-licensed. It runs the following components locally; their own licenses apply.
-Model files are **not** distributed with this repository: `scripts/download-models.*` downloads them from their original sources.
+Model files are **not** distributed with this repository or the release packages: the app (or `scripts/download-models.*`) downloads them from their original sources.
+Windows packages include the Microsoft Visual C++ runtime DLLs (`msvcp140*`, `vcruntime140*`, `vcomp140`), redistributed under the Visual Studio license terms.
 
 | Component | Use | License |
 |---|---|---|

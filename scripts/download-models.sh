@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; if [ -n "${ECHOSUB_HOME:-}" ]; then H=
 mkdir -p "$DIR"
 get() { # url dosya
   if [ -s "$DIR/$2" ]; then echo "var: $2"; return; fi
-  echo "indiriliyor: $2"; curl -L --fail --retry 3 -o "$DIR/$2.part" "$1" && mv "$DIR/$2.part" "$DIR/$2"
+  echo "indiriliyor: $2"; curl -L --fail --retry 3 -C - -o "$DIR/$2.part" "$1" && mv "$DIR/$2.part" "$DIR/$2"
 }
 HF=https://huggingface.co
 get "$HF/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin" ggml-silero-v5.1.2.bin

@@ -16,9 +16,14 @@ ureq = "2"
 rustfft = "6.4.1"
 ort = "2.0.0-rc.15"
 
+# Linux'ta hoparlör sesi PulseAudio/PipeWire monitör kaynağından alınır (saf Rust istemci, sistem kütüphanesi istemez).
+[target.'cfg(target_os = "linux")'.dependencies]
+cpal = { version = "0.18", features = ["pulseaudio"] }
+
 # GPU hızlandırma: Windows'ta DirectML (AMD/NVIDIA/Intel), macOS'ta CoreML.
 [target.'cfg(windows)'.dependencies]
 ort = { version = "2.0.0-rc.15", features = ["directml"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ort = { version = "2.0.0-rc.15", features = ["coreml"] }

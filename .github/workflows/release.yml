@@ -77,9 +77,34 @@ jobs:
           cp -r app/runtime/whisper app/runtime/llama "dist/$P/runtime/"
           cp scripts/download-models.* "dist/$P/scripts/"
           cp README.md README.tr.md LICENSE CHANGELOG.md THIRD_PARTY_NOTICES.md "dist/$P/"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # Kullanıcıdan Visual C++ Redistributable istememek için çalışma zamanı pakete girer.
+            redist="$(cygpath -u "$VCToolsRedistDir")/x64"
+            for d in "dist/$P" "dist/$P/runtime/whisper" "dist/$P/runtime/llama"; do
+              cp "$redist"/Microsoft.VC*.CRT/msvcp140*.dll "$redist"/Microsoft.VC*.CRT/vcruntime140*.dll "$d/"
+            done
+            for d in "dist/$P/runtime/whisper" "dist/$P/runtime/llama"; do
+              cp "$redist"/Microsoft.VC*.OpenMP/vcomp140.dll "$d/"
+            done
+          fi
           cd dist
           if [ "${{ matrix.ext }}" = "zip" ]; then 7z a "$P.zip" "$P" >/dev/null; else tar czf "$P.tar.gz" "$P"; fi
           ls -la
+      - name: Verify package
+        shell: bash
+        run: |
+          set -e
+          P="dist/echosub-${GITHUB_REF_NAME:-dev}-${{ matrix.name }}"
+          # Sunucular paketten açılabiliyor mu (eksik kütüphane)?
+          # Çıktı da aranır: kabuk, bozuk/boş dosyayı betik sanıp "başarılı" dönebilir.
+          for s in whisper/whisper-server llama/llama-server; do
+            out="$(cd "$P/runtime/$(dirname "$s")" && "./$(basename "$s")" --help 2>&1)" && [ -n "$out" ] || { echo "::error::$s paketten açılmıyor: $out"; exit 1; }
+          done
+          # CI makinesine özel komut (AVX-512) kaldıysa kullanıcının işlemcisinde çöker.
+          case "$RUNNER_OS" in
+            Windows) for f in "$P"/runtime/*/ggml-cpu.dll; do n="$(dumpbin -nologo -disasm "$(cygpath -w "$f")" | grep -c zmm || true)"; [ "$n" = 0 ] || { echo "::error::$f AVX-512 içeriyor ($n)"; exit 1; }; done ;;
+            Linux)   for f in "$P"/runtime/*/libggml-cpu.so.*.*; do n="$(objdump -d "$f" | grep -c zmm || true)"; [ "$n" = 0 ] || { echo "::error::$f AVX-512 içeriyor ($n)"; exit 1; }; done ;;
+          esac
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}

@@ -8,6 +8,7 @@
   const statusEl = document.getElementById('status');
   let S = null;            // ayarlar
   let entries = [];        // {seg, text, orig, final, ts}
+  let doneSeg = 0;         // final'i gelmiş en büyük parça numarası
   let statusTimer = null;
 
   // ---------------------------------------------------------------- stil
@@ -73,6 +74,9 @@
   }
 
   function onCaption(c) {
+    // Kısmi çeviri, aynı parçanın final'inden (ya da silinmesinden) sonra gelebilir: yok say.
+    if (!c.final && c.seg_id <= doneSeg) return;
+    if (c.final) doneSeg = Math.max(doneSeg, c.seg_id);
     const i = entries.findIndex(e => e.seg === c.seg_id);
     if (c.clear) {
       if (i >= 0) entries.splice(i, 1);

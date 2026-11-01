@@ -63,14 +63,14 @@ Everything runs as local processes talking over `127.0.0.1`. The only network tr
 
 | | Minimum (usable) | Recommended |
 |---|---|---|
-| **OS** | Windows 10/11 · Linux (glibc 2.38+, e.g. Ubuntu 24.04) with PipeWire or PulseAudio · macOS 14.6+ | Windows 11 |
+| **OS** | Windows 10/11 · Linux (glibc 2.39+, e.g. Ubuntu 24.04) with PipeWire or PulseAudio · macOS 14.6+ | Windows 11 |
 | **GPU** | Any Vulkan 1.2 GPU with about 4 GB VRAM (AMD, NVIDIA, Intel) or Apple Silicon | 8 GB+ VRAM (16 GB for *quality* mode) |
-| **CPU / RAM** | 4 cores, 8 GB RAM (CPU-only works but is much slower) | 8+ cores, 16 GB RAM |
+| **CPU / RAM** | 4 cores with AVX2 (Intel 2013+, AMD Zen or newer), 8 GB RAM. CPU-only works but is much slower | 8+ cores, 16 GB RAM |
 | **Disk** | about 3 GB (*fast*/*balanced*), about 8 GB (*quality*) | SSD |
 
 Disk use per preset: *fast* about 2.8 GB, *balanced* about 3.1 GB, *quality* about 7.9 GB (models only).
 
-On Windows the app also needs the Microsoft Edge WebView2 runtime (already part of Windows 11 and current Windows 10) and the [Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist) (installed on most PCs). If `echosub.exe` or a server does not start with a missing-DLL error, install it.
+On Windows the app also needs the Microsoft Edge WebView2 runtime (already part of Windows 11 and current Windows 10) and an installed graphics driver, which provides `vulkan-1.dll`. The Visual C++ runtime is included in the package.
 
 ## GPU support
 
@@ -105,12 +105,20 @@ We cannot test every card. If yours misbehaves, please open an issue with the tw
 
 3. When the download finishes the models load automatically (a few seconds); play any audio and captions appear. A small status message shows when it is ready.
 
-Prefer the command line, or want to prepare an offline machine? `scripts/download-models.ps1 -Quality balanced` (`fast` | `balanced` | `quality`) puts the same files into `runtime/models`. Switching the quality preset later opens the download window again if the new models are missing, and *Settings → Download / check models* reopens it any time.
+Prefer the command line, or want to prepare an offline machine? `scripts/download-models.ps1 -Quality balanced` (`fast` | `balanced` | `quality`) puts the same files into `runtime/models`. Switching the quality preset later opens the download window again if the new models are missing, and *Settings → Modelleri indir / denetle* (download / check models) reopens it any time.
 
-### Linux / macOS
+EchoSub has no taskbar icon: it is the transparent strip at the bottom of the screen. Hover over it to reach settings and close. Starting it a second time does nothing while it is already running.
 
-Release archives are built by CI, but these platforms have not been validated on real hardware yet (see
-[Status](#status)). To build from source:
+### Linux / macOS (release build)
+
+These packages are built by CI, but they have not been validated on real desktop hardware yet (see [Status](#status)).
+
+Unpack the archive and run `./echosub`; the first start works like on Windows.
+
+- **Linux** needs the WebKitGTK runtime and a sound server: `sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libasound2t64` (Ubuntu 24.04). Sound comes from the monitor source of the default output, through PulseAudio or PipeWire (`pipewire-pulse`).
+- **macOS:** the download is not signed, so remove the quarantine flag first: `xattr -dr com.apple.quarantine echosub-*-macos-arm64`. The system asks for audio capture permission the first time.
+
+### Build from source
 
 ```bash
 scripts/build-sidecars.sh            # whisper-server and llama-server (Vulkan on Linux, Metal on macOS)
@@ -118,8 +126,9 @@ scripts/download-models.sh balanced  # fast | balanced | quality
 cd app && cargo run --release
 ```
 
-On Linux install `libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libpulse-dev` and a Vulkan driver first.
-macOS needs the audio capture permission the first time.
+Ubuntu 24.04 packages for this: `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libasound2-dev libvulkan-dev glslc glslang-tools spirv-headers ninja-build cmake`, plus a Vulkan driver.
+
+On Windows use `scripts\build-sidecars.ps1` from an *x64 Native Tools* prompt (Visual Studio 2022 with C++, CMake, Ninja and the Vulkan SDK). The script builds fixed, tested versions of whisper.cpp and llama.cpp.
 
 ## Using it
 
@@ -140,7 +149,7 @@ macOS needs the audio capture permission the first time.
 
 Settings are stored in `settings.json` in the OS config folder (`%APPDATA%\com.echosub.app` on Windows,
 `~/.config/com.echosub.app` on Linux, `~/Library/Application Support/com.echosub.app` on macOS).
-Server logs are written to `runtime/logs`.
+Logs are written to `runtime/logs`. What the app hears and translates is not saved there unless you start it with `ECHOSUB_LOG_CAPTIONS=1`.
 
 ### Quality presets
 
@@ -163,13 +172,15 @@ Measured with *balanced* mode on a Radeon RX 9070 XT (Vulkan), Windows 11:
 
 Latency depends on your GPU; slower cards should use *fast*. Songs show captions on final segments only, not as live partials.
 
+Without a GPU (8 cores of an i9-14900K, Linux): *fast* takes about 5 to 10 s per sentence, *balanced* over 25 s, which cannot keep up with continuous speech. Use *fast*. When the machine falls behind, partial captions are skipped and only the newest three sentences wait in line, so captions may skip sentences instead of lagging further and further.
+
 ## Status
 
 | Platform | State |
 |---|---|
 | Windows 10/11 | Developed and tested here, including an automated click-through test |
-| Linux | Compiles in CI. **Not yet tested on real hardware.** Wayland may not report the cursor position, in which case click-through switches itself off and the overlay stays fully clickable |
-| macOS | Compiles in CI. **Not yet tested on real hardware.** Needs macOS 14.6+ for system-audio capture |
+| Linux | The package was run end to end on Ubuntu 24.04 under WSLg with PulseAudio, on the CPU: model download, speaker capture, recognition, translation. **Not yet tested on a desktop install, with a GPU or with PipeWire.** Wayland may not report the cursor position, in which case click-through switches itself off and the overlay stays fully clickable |
+| macOS | Compiles and packages in CI. **Not yet tested on real hardware.** Needs macOS 14.6+ for system-audio capture |
 
 Known limitations:
 
@@ -179,7 +190,9 @@ Known limitations:
 
 ## Troubleshooting
 
-- **"Çeviri kapalı" / translation off:** the translation model or `llama-server` is missing. Open *Settings → Download / check models* and check `runtime/logs/llama.log`.
+- **"Çeviri kapalı" / translation off:** the translation model or `llama-server` is missing. Open *Settings → Modelleri indir / denetle* and check `runtime/logs/llama.log`.
+- **"Konuşma sunucusu çöktü" / speech server crashed:** see the last lines of `runtime/logs/whisper.log`. Update the graphics driver; a CPU without AVX2 is not supported by the release packages.
+- **"… portu başka bir program tarafından kullanılıyor" / port in use:** another program holds port 18080 or 18081, often a server left over after a crash on Linux or macOS. Close it and start EchoSub again.
 - **No captions at all:** check that something is actually playing on the default output device and that the status message says it is ready. Logs: `runtime/logs/app.log` and `whisper.log`.
 - **Captions lag with the *quality* preset:** switch to *balanced* or *fast*, or turn off the vocal-separation fallback.
 - **Clicks do not pass through on Linux:** expected on some Wayland compositors; see [Status](#status).
@@ -189,7 +202,7 @@ Known limitations:
 
 ```bash
 cd app
-cargo test --release     # 33 unit tests: settings, languages, resampler, queues, junk/loop filters, WAV, separation helpers, model downloader (resume, cancel)
+cargo test --release     # unit tests: settings, languages, resampler, queues, junk/loop filters, WAV, separation helpers, model downloader (resume, cancel), server control
 cargo build --release
 ```
 
@@ -197,10 +210,10 @@ Integration and tooling:
 
 - `tests/click-through/clicktest.ps1` is a Windows test that puts a target window under the overlay and checks that clicks on the captions reach it, that the top strip does not, and that drag and resize still work.
 - `tools/screenshots/make-screenshots.ps1` regenerates every image in `docs/images` from the real UI files using headless Edge, with a mocked Tauri API.
-- GitHub Actions (`.github/workflows`) runs the tests on Windows, Ubuntu and macOS, and builds release packages when you push a `v*` tag.
+- GitHub Actions (`.github/workflows`) runs the tests on Windows, Ubuntu and macOS, and builds release packages when you push a `v*` tag. Each package must pass a check before it is published: both servers start from the package, and the Windows and Linux CPU libraries contain no AVX-512 code.
 
-Developer helpers (environment variables): `ECHOSUB_HOME` to point at a custom `runtime` folder, `ECHOSUB_DUMP_DIR` to save
-final audio segments as WAV files, and `echosub --separate in.wav out.wav model.onnx` to try vocal separation from the command line.
+Developer helpers: `ECHOSUB_HOME` to point at a custom `runtime` folder, `ECHOSUB_DUMP_DIR` to save final audio segments as WAV files,
+`ECHOSUB_LOG_CAPTIONS=1` to write captions and timings to `app.log`, and `echosub --separate in.wav out.wav model.onnx` to try vocal separation from the command line.
 
 ## Project layout
 

@@ -56,7 +56,9 @@
   for (const [k, t] of Object.entries(FIELDS)) {
     const el = $(k);
     el.addEventListener(t === 'c' ? 'change' : 'input', () => {
-      S[k] = t === 'c' ? el.checked : t === 'n' ? parseFloat(el.value) : el.value;
+      const n = parseFloat(el.value);
+      if (t === 'n' && !Number.isFinite(n)) return; // sayı alanı yazılırken boş kalabilir
+      S[k] = t === 'c' ? el.checked : t === 'n' ? n : el.value;
       if (k === 'lines') S[k] = Math.max(1, Math.min(6, Math.round(S[k] || 2)));
       if (k === 'auto_fit') S.font_scale = S.auto_fit ? Math.min(1, S.font_scale) : S.font_scale;
       fill();

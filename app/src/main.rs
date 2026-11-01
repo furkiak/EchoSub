@@ -40,6 +40,47 @@ struct App {
     asked: Mutex<Vec<String>>,
 }
 
+/// Aynı anda tek kopya: görev çubuğunda görünmediği için kullanıcı kolayca iki kez başlatabilir.
+const INSTANCE_PORT: u16 = 18079;
+/// app.log bu boyutu geçince (başlangıçta) app.old.log olur.
+const LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+
+fn rotate_log(paths: &Paths) {
+    let log = paths.log_dir().join("app.log");
+    if std::fs::metadata(&log).map(|m| m.len() > LOG_MAX_BYTES).unwrap_or(false) {
+        let _ = std::fs::rename(&log, paths.log_dir().join("app.old.log"));
+    }
+}
+
+/// Windows: uygulama nasıl kapanırsa kapansın (Görev Yöneticisi, çökme) alt süreçler de kapansın;
+/// yoksa sunucular VRAM'i ve portları tutmaya devam eder.
+#[cfg(windows)]
+fn kill_children_on_exit() {
+    use std::mem::{size_of, zeroed};
+    use std::ptr::null;
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    // Tutamaç bilerek kapatılmaz: süreç ölünce sistem kapatır, iş nesnesi alt süreçleri sonlandırır.
+    unsafe {
+        let job = CreateJobObjectW(null(), null());
+        if job.is_null() {
+            return;
+        }
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const _,
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        );
+        AssignProcessToJobObject(job, GetCurrentProcess());
+    }
+}
+
 fn log_line(paths: &Paths, msg: &str) {
     let dir = paths.log_dir();
     let _ = std::fs::create_dir_all(&dir);
@@ -60,6 +101,26 @@ fn set_status(app: &AppHandle, stage: &str, msg: &str) {
     let _ = app.emit("status", s);
 }
 
+/// Eksik model varsa kullanıcıya sor (aynı eksik kümesi için bir kez).
+fn ask_for_missing_models(app: &AppHandle) {
+    let st = app.state::<App>();
+    let s = st.settings.lock().unwrap().clone();
+    let miss = models::missing(&st.paths, &s);
+    if miss.is_empty() || st.dl_active.load(Ordering::Relaxed) {
+        return;
+    }
+    let key: Vec<String> = miss.iter().map(|m| m.file.to_string()).collect();
+    let first_time = {
+        let mut asked = st.asked.lock().unwrap();
+        let fresh = *asked != key;
+        *asked = key;
+        fresh
+    };
+    if first_time {
+        open_models_window(app);
+    }
+}
+
 /// Sunucuları (yeniden) başlatır; model yüklenirken durum olayları gönderir.
 fn boot(app: AppHandle) {
     let st = app.state::<App>();
@@ -69,20 +130,7 @@ fn boot(app: AppHandle) {
     st.sidecars.lock().unwrap().stop();
     let s = st.settings.lock().unwrap().clone();
 
-    // Eksik model varsa kullanıcıya sor (aynı eksik kümesi için bir kez).
-    let miss = models::missing(&st.paths, &s);
-    if !miss.is_empty() && !st.dl_active.load(Ordering::Relaxed) {
-        let key: Vec<String> = miss.iter().map(|m| m.file.to_string()).collect();
-        let first_time = {
-            let mut asked = st.asked.lock().unwrap();
-            let fresh = *asked != key;
-            *asked = key;
-            fresh
-        };
-        if first_time {
-            open_models_window(&app);
-        }
-    }
+    ask_for_missing_models(&app);
     let (wm, _) = s.model_files();
     if !models::is_present(&st.paths.model(wm)) {
         set_status(&app, "error", "Modeller henüz indirilmedi — ayarlardan “Modelleri indir” düğmesini kullan");
@@ -90,17 +138,30 @@ fn boot(app: AppHandle) {
     }
 
     set_status(&app, "loading", "Konuşma modeli yükleniyor…");
-    let started = st.sidecars.lock().unwrap().start_whisper(&st.paths, &s);
+    st.pipeline.vad_ready.store(st.paths.model(sidecar::VAD_FILE).exists(), Ordering::Relaxed);
+    let started = {
+        // Kapanış, kilidi almadan önce `stop` der: kapanırken yeni sunucu başlatılmaz.
+        let mut sc = st.sidecars.lock().unwrap();
+        if st.pipeline.stop.load(Ordering::Relaxed) {
+            return;
+        }
+        sc.start_whisper(&st.paths, &s)
+    };
     match started {
         Ok(()) => {
             let url = format!("http://127.0.0.1:{WHISPER_PORT}/");
-            match sidecar::wait_http(&url, Duration::from_secs(120), || st.sidecars.lock().unwrap().whisper_alive()) {
+            let alive = || st.sidecars.lock().unwrap().whisper_alive();
+            match sidecar::wait_http(&url, Duration::from_secs(120), alive) {
                 sidecar::Wait::Ready => {
                     pipeline::warmup_whisper();
+                    if !alive() {
+                        set_status(&app, "error", WHISPER_CRASHED);
+                        return;
+                    }
                     st.pipeline.whisper_ready.store(true, Ordering::Relaxed);
                 }
                 sidecar::Wait::Died => {
-                    set_status(&app, "error", "Konuşma sunucusu çöktü — ayrıntı: runtime/logs/whisper.log");
+                    set_status(&app, "error", WHISPER_CRASHED);
                     return;
                 }
                 sidecar::Wait::Timeout => {
@@ -116,18 +177,29 @@ fn boot(app: AppHandle) {
     }
 
     set_status(&app, "loading", "Çeviri modeli yükleniyor…");
-    let started = st.sidecars.lock().unwrap().start_llama(&st.paths, &s);
+    let started = {
+        let mut sc = st.sidecars.lock().unwrap();
+        if st.pipeline.stop.load(Ordering::Relaxed) {
+            return;
+        }
+        sc.start_llama(&st.paths, &s)
+    };
     match started {
         Ok(()) => {
             let url = format!("http://127.0.0.1:{LLAMA_PORT}/health");
-            match sidecar::wait_http(&url, Duration::from_secs(240), || st.sidecars.lock().unwrap().llama_alive()) {
+            let alive = || st.sidecars.lock().unwrap().llama_alive();
+            match sidecar::wait_http(&url, Duration::from_secs(240), alive) {
                 sidecar::Wait::Ready => {
                     pipeline::warmup_llama();
+                    if !alive() {
+                        set_status(&app, "warn", LLAMA_CRASHED);
+                        return;
+                    }
                     st.pipeline.llama_ready.store(true, Ordering::Relaxed);
                     set_status(&app, "ready", "Hazır");
                 }
                 sidecar::Wait::Died => {
-                    set_status(&app, "warn", "Çeviri sunucusu çöktü (runtime/logs/llama.log); yalnızca orijinal altyazı");
+                    set_status(&app, "warn", LLAMA_CRASHED);
                 }
                 sidecar::Wait::Timeout => {
                     set_status(&app, "warn", "Çeviri modeli yüklenemedi; yalnızca orijinal altyazı");
@@ -136,6 +208,37 @@ fn boot(app: AppHandle) {
         }
         Err(e) => set_status(&app, "warn", &format!("Çeviri kapalı: {e}")),
     }
+}
+
+const WHISPER_CRASHED: &str = "Konuşma sunucusu çöktü — ayrıntı: runtime/logs/whisper.log";
+const LLAMA_CRASHED: &str = "Çeviri sunucusu çöktü (runtime/logs/llama.log); yalnızca orijinal altyazı";
+
+/// Sunucu çalışırken kapanırsa (sürücü sıfırlanması gibi) altyazı sessizce kesilmesin.
+fn spawn_server_watchdog(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(2));
+        let st = app.state::<App>();
+        let p = &st.pipeline;
+        if p.stop.load(Ordering::Relaxed) {
+            return;
+        }
+        // boot önce "hazır" bayrağını indirip sonra durdurduğu için kilit altında yanlış alarm olmaz.
+        let (whisper_down, llama_down) = {
+            let mut sc = st.sidecars.lock().unwrap();
+            (
+                p.whisper_ready.load(Ordering::Relaxed) && !sc.whisper_alive(),
+                p.llama_ready.load(Ordering::Relaxed) && !sc.llama_alive(),
+            )
+        };
+        if whisper_down {
+            p.whisper_ready.store(false, Ordering::Relaxed);
+            set_status(&app, "error", WHISPER_CRASHED);
+        }
+        if llama_down {
+            p.llama_ready.store(false, Ordering::Relaxed);
+            set_status(&app, "warn", LLAMA_CRASHED);
+        }
+    });
 }
 
 /// Altyazı penceresi için imleç izleyici (~25 Hz).
@@ -241,17 +344,20 @@ fn languages() -> Vec<(String, String)> {
 
 #[tauri::command]
 fn set_settings(app: AppHandle, state: State<App>, new: Settings) {
-    let restart = {
+    let (restart, separation_changed) = {
         let mut cur = state.settings.lock().unwrap();
-        let r = cur.needs_restart(&new);
+        let r = (cur.needs_restart(&new), cur.use_separation != new.use_separation);
         *cur = new.clone();
         r
     };
     new.save(&state.settings_path);
     let _ = app.emit("settings", new);
+    let h = app.clone();
     if restart {
-        let h = app.clone();
         std::thread::spawn(move || boot(h));
+    } else if separation_changed {
+        // Ayrı iş parçacığından: senkron komuttan pencere açmak WebView'i kilitler.
+        std::thread::spawn(move || ask_for_missing_models(&h));
     }
 }
 
@@ -425,6 +531,16 @@ fn main() {
         cli_separate(&args);
         return;
     }
+    // Kapanana kadar tutulur.
+    let _instance = match std::net::TcpListener::bind(("127.0.0.1", INSTANCE_PORT)) {
+        Ok(l) => l,
+        Err(_) => {
+            log_line(&Paths::resolve(), "EchoSub zaten açık; ikinci kopya kapatıldı");
+            return;
+        }
+    };
+    #[cfg(windows)]
+    kill_children_on_exit();
     let app = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_settings, set_settings, get_status, languages, open_settings, quit,
@@ -433,6 +549,7 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
             let paths = Paths::resolve();
+            rotate_log(&paths);
             let cfg_dir = app.path().app_config_dir().unwrap_or_else(|_| PathBuf::from("."));
             let settings_path = cfg_dir.join("settings.json");
             let settings = Arc::new(Mutex::new(Settings::load(&settings_path)));
@@ -473,8 +590,10 @@ fn main() {
             }
             let emit_handle = handle.clone();
             let emit_paths = paths.clone();
+            // Duyulan her şey varsayılan olarak diske yazılmaz (görüşmeler de buradan geçer).
+            let log_captions = std::env::var("ECHOSUB_LOG_CAPTIONS").is_ok();
             let emit: pipeline::EmitFn = Arc::new(move |c: &Caption| {
-                if !c.clear {
+                if log_captions && !c.clear {
                     log_line(
                         &emit_paths,
                         &format!(
@@ -494,6 +613,7 @@ fn main() {
             st.pipeline.start(shared, settings, emit, log, paths.model("UVR-MDX-NET-Voc_FT.onnx"));
 
             spawn_hover_watcher(handle.clone());
+            spawn_server_watchdog(handle.clone());
             // Modelleri arka planda yükle.
             std::thread::spawn(move || boot(handle));
             Ok(())

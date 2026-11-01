@@ -1,10 +1,10 @@
-//! Sistem sesi yakalama (loopback). Çıkış cihazını girdi olarak açmak
-//! Windows'ta WASAPI loopback'i açar; Linux (PipeWire/Pulse monitor) ve macOS
-//! (Core Audio tap, 14.6+) için cpal'ın ilgili destekleri kullanılır.
+//! Sistem sesi yakalama (loopback). Çıkış cihazını girdi olarak açmak Windows'ta
+//! WASAPI loopback'i, macOS'ta Core Audio tap'i (14.6+) açar. Linux'ta çıkışın
+//! monitör kaynağı dinlenir (PulseAudio ya da PipeWire).
 //! Çıktı: 16 kHz mono f32, `Shared` tamponuna eklenir.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{ErrorKind, SampleFormat};
+use cpal::ErrorKind;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -36,29 +36,64 @@ fn device_id(d: &cpal::Device) -> String {
     d.id().map(|i| format!("{i:?}")).unwrap_or_default()
 }
 
+/// Hoparlör sesini veren giriş aygıtı ve biçimi.
+#[cfg(not(target_os = "linux"))]
+fn capture_source(
+    _host: &cpal::Host,
+    output: &cpal::Device,
+) -> Result<(cpal::Device, cpal::SupportedStreamConfig), String> {
+    let cfg = output.default_output_config().map_err(|e| format!("cihaz ayarı okunamadı: {e}"))?;
+    if cfg.sample_format() != cpal::SampleFormat::F32 {
+        return Err(format!("desteklenmeyen örnek biçimi: {:?}", cfg.sample_format()));
+    }
+    Ok((output.clone(), cfg))
+}
+
+/// Hoparlör sesini veren giriş aygıtı ve biçimi. PulseAudio ve PipeWire her çıkış için
+/// "<ad>.monitor" kaynağı sunar. Sunucu örneği f32'ye kendisi dönüştürür. Salt ALSA'da
+/// karşılığı yok: çıkışı girdi olarak açmak mikrofonu dinlemek olurdu, bu yüzden açılmaz.
+#[cfg(target_os = "linux")]
+fn capture_source(
+    host: &cpal::Host,
+    output: &cpal::Device,
+) -> Result<(cpal::Device, cpal::SupportedStreamConfig), String> {
+    let name = |d: &cpal::Device| d.id().map(|i| i.id().to_string()).unwrap_or_default();
+    let want = format!("{}.monitor", name(output));
+    let source = host
+        .devices()
+        .map_err(|e| format!("aygıtlar okunamadı: {e}"))?
+        .find(|d| name(d) == want)
+        .ok_or_else(|| format!("{want} bulunamadı (PulseAudio ya da PipeWire gerekir)"))?;
+    let cfg = source.default_input_config().map_err(|e| format!("cihaz ayarı okunamadı: {e}"))?;
+    Ok((source, cfg))
+}
+
 pub fn spawn(shared: Shared, stop: Arc<AtomicBool>, log: impl Fn(&str) + Send + 'static) {
     std::thread::spawn(move || {
+        // Aygıt yokken aynı satırla günlüğü doldurma.
+        let mut last = String::new();
+        let mut say = move |m: &str| {
+            if m != last {
+                log(m);
+                last = m.to_string();
+            }
+        };
         while !stop.load(Ordering::Relaxed) {
             let host = cpal::default_host();
-            let Some(device) = host.default_output_device() else {
-                log("çıkış cihazı yok, bekleniyor");
+            let Some(output) = host.default_output_device() else {
+                say("çıkış cihazı yok, bekleniyor");
                 std::thread::sleep(Duration::from_secs(2));
                 continue;
             };
-            let id = device_id(&device);
-            let cfg = match device.default_output_config() {
+            let id = device_id(&output);
+            let (device, cfg) = match capture_source(&host, &output) {
                 Ok(c) => c,
                 Err(e) => {
-                    log(&format!("cihaz ayarı okunamadı: {e}"));
-                    std::thread::sleep(Duration::from_secs(2));
+                    say(&e);
+                    std::thread::sleep(Duration::from_secs(3));
                     continue;
                 }
             };
-            if cfg.sample_format() != SampleFormat::F32 {
-                log(&format!("desteklenmeyen örnek biçimi: {:?}", cfg.sample_format()));
-                std::thread::sleep(Duration::from_secs(5));
-                continue;
-            }
             let channels = cfg.channels() as usize;
             let mut rs = Resampler::new(cfg.sample_rate());
             let broken = Arc::new(AtomicBool::new(false));
@@ -98,17 +133,17 @@ pub fn spawn(shared: Shared, stop: Arc<AtomicBool>, log: impl Fn(&str) + Send + 
             let stream = match stream {
                 Ok(s) => s,
                 Err(e) => {
-                    log(&format!("loopback açılamadı: {e}"));
+                    say(&format!("loopback açılamadı: {e}"));
                     std::thread::sleep(Duration::from_secs(3));
                     continue;
                 }
             };
             if let Err(e) = stream.play() {
-                log(&format!("akış başlatılamadı: {e}"));
+                say(&format!("akış başlatılamadı: {e}"));
                 std::thread::sleep(Duration::from_secs(3));
                 continue;
             }
-            log(&format!("loopback açık: {} Hz, {} kanal", cfg.sample_rate(), channels));
+            say(&format!("loopback açık: {} Hz, {} kanal", cfg.sample_rate(), channels));
 
             // Varsayılan cihaz değişirse ya da akış bozulursa yeniden aç.
             loop {
@@ -116,12 +151,9 @@ pub fn spawn(shared: Shared, stop: Arc<AtomicBool>, log: impl Fn(&str) + Send + 
                 if stop.load(Ordering::Relaxed) || broken.load(Ordering::Relaxed) {
                     break;
                 }
-                let now = cpal::default_host()
-                    .default_output_device()
-                    .map(|d| device_id(&d))
-                    .unwrap_or_default();
+                let now = host.default_output_device().map(|d| device_id(&d)).unwrap_or_default();
                 if now != id {
-                    log("varsayılan çıkış cihazı değişti, yeniden açılıyor");
+                    say("varsayılan çıkış cihazı değişti, yeniden açılıyor");
                     break;
                 }
             }

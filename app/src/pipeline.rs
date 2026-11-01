@@ -33,6 +33,14 @@ const PRE_ROLL: usize = TARGET_RATE as usize * 3 / 10;
 /// Whisper'a tekrar gidilmez.
 /// Eşik küçük tutuldu: kısmi sonuç son kelimeyi yarım duymuş olabilir.
 const REUSE_MAX_NEW_SAMPLES: usize = TARGET_RATE as usize / 10;
+/// Yetişemeyen makinede (ekran kartı yok) en fazla bu kadar cümle bekler; eskisi atılır.
+/// Yoksa altyazı dakikalarca geriden gelir.
+const MAX_PENDING_FINALS: usize = 3;
+/// Whisper bir parçayı bundan yavaş işliyorsa kısmi sonuçlar atlanır: sıra final cümlelere kalsın.
+const WHISPER_SLOW_MS: u64 = 1500;
+/// Sunucu isteği zaman aşımı. İşlemciyle tek parça onlarca saniye sürebilir; sunucu vazgeçilen
+/// isteği işlemeye devam ettiği için kısa süre sonraki istekleri de aç bırakır.
+const HTTP_TIMEOUT: Duration = Duration::from_secs(180);
 
 #[derive(Serialize, Clone, Debug)]
 pub struct Caption {
@@ -59,8 +67,28 @@ struct Job {
     pcm: Vec<f32>,
     is_final: bool,
     created: Instant,
-    /// Son kısmi sonuç bu final'i zaten karşılıyor (yeni konuşma yok).
-    reuse_ok: bool,
+    /// Final için: son kısmi sonuç bu final'i karşılıyorsa (yeni konuşma yok) o kısmi işin
+    /// örnek sayısı; 0 ise Whisper'a yeniden gidilir.
+    reuse_len: usize,
+}
+
+/// Son işlenen kısmi Whisper sonucu.
+#[derive(Clone)]
+struct Partial {
+    seg_id: u64,
+    /// Kaç örnek üzerinden üretildi.
+    len: usize,
+    text: String,
+    language: String,
+    no_speech: f32,
+    lp: f32,
+}
+
+/// Final için kısmi sonuç kullanılabilir mi? Bölütleyicinin istediği son kısmi iş kuyrukta
+/// düşmüş olabilir (final onun yerini alır, yavaş modda atlanır); o zaman elimizdeki sonuç
+/// daha eskidir ve son kelimeleri içermez.
+fn reusable_partial(last: &Option<Partial>, job: &Job) -> Option<Partial> {
+    last.as_ref().filter(|p| job.reuse_len > 0 && p.seg_id == job.seg_id && p.len == job.reuse_len).cloned()
 }
 
 /// Whisper çıktısı, çeviri bekleyen iş.
@@ -73,6 +101,14 @@ struct TJob {
     q_ms: u64,
     w_ms: u64,
     lp: f32,
+}
+
+fn drop_oldest_finals<T>(q: &mut VecDeque<T>, is_final: impl Fn(&T) -> bool) {
+    while q.iter().filter(|j| is_final(j)).count() > MAX_PENDING_FINALS {
+        if let Some(i) = q.iter().position(|j| is_final(j)) {
+            q.remove(i);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -90,6 +126,7 @@ impl TQueue {
             q.retain(|j| j.is_final);
         }
         q.push_back(job);
+        drop_oldest_finals(&mut q, |j| j.is_final);
         self.cv.notify_one();
     }
 
@@ -126,6 +163,7 @@ impl Queue {
             q.retain(|j| j.is_final); // en fazla bir bekleyen kısmi iş
         }
         q.push_back(job);
+        drop_oldest_finals(&mut q, |j| j.is_final);
         self.cv.notify_one();
     }
 
@@ -147,6 +185,8 @@ pub struct Pipeline {
     pub stop: Arc<AtomicBool>,
     pub whisper_ready: Arc<AtomicBool>,
     pub llama_ready: Arc<AtomicBool>,
+    /// Whisper sunucusu VAD modeliyle mi başlatıldı? Modelsiz sunucu `vad=true` isteklerini reddeder.
+    pub vad_ready: Arc<AtomicBool>,
     queue: Arc<Queue>,
     tqueue: Arc<TQueue>,
     /// Çeviri yavaşsa (büyük model / zayıf GPU) kısmi sonuçlar atlanır; GPU
@@ -160,6 +200,7 @@ impl Pipeline {
             stop: Arc::new(AtomicBool::new(false)),
             whisper_ready: Arc::new(AtomicBool::new(false)),
             llama_ready: Arc::new(AtomicBool::new(false)),
+            vad_ready: Arc::new(AtomicBool::new(false)),
             queue: Arc::new(Queue::default()),
             tqueue: Arc::new(TQueue::default()),
             slow: Arc::new(AtomicBool::new(false)),
@@ -184,9 +225,10 @@ impl Pipeline {
             let stop = Arc::clone(&self.stop);
             let wr = Arc::clone(&self.whisper_ready);
             let lr = Arc::clone(&self.llama_ready);
+            let vr = Arc::clone(&self.vad_ready);
             let (settings, emit, log) = (Arc::clone(&settings), Arc::clone(&emit), Arc::clone(&log));
             let slow = Arc::clone(&self.slow);
-            std::thread::spawn(move || worker(queue, tq, stop, settings, emit, log, wr, lr, slow, sep_model));
+            std::thread::spawn(move || worker(queue, tq, stop, settings, emit, log, wr, lr, vr, slow, sep_model));
         }
         let tq = Arc::clone(&self.tqueue);
         let stop = Arc::clone(&self.stop);
@@ -229,6 +271,7 @@ fn segmenter(shared: Shared, queue: Arc<Queue>, stop: Arc<AtomicBool>) {
     let mut seg_id = 0u64;
     let mut last_sub = Instant::now();
     let mut partial_voiced = 0usize; // son kısmi istendiğindeki konuşma miktarı (0 = hiç yok)
+    let mut partial_len = 0usize; // son kısmi işin örnek sayısı
 
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(30));
@@ -271,9 +314,14 @@ fn segmenter(shared: Shared, queue: Arc<Queue>, stop: Arc<AtomicBool>) {
             let ended = silence_ms >= END_SILENCE_MS;
             if ended || seg.len() >= MAX_SEG_SAMPLES {
                 let mut carry = Vec::new();
-                let reuse_ok = ended
+                let reuse_len = if ended
                     && partial_voiced > 0
-                    && voiced.saturating_sub(partial_voiced) < REUSE_MAX_NEW_SAMPLES;
+                    && voiced.saturating_sub(partial_voiced) < REUSE_MAX_NEW_SAMPLES
+                {
+                    partial_len
+                } else {
+                    0
+                };
                 if ended {
                     // Sondaki uzun sessizliği kırp (200 ms bırak).
                     let trim = ((silence_ms.saturating_sub(200)) as usize) * TARGET_RATE as usize / 1000;
@@ -288,7 +336,7 @@ fn segmenter(shared: Shared, queue: Arc<Queue>, stop: Arc<AtomicBool>) {
                         pcm: std::mem::take(&mut seg),
                         is_final: true,
                         created: Instant::now(),
-                        reuse_ok,
+                        reuse_len,
                     });
                 }
                 seg.clear();
@@ -311,9 +359,10 @@ fn segmenter(shared: Shared, queue: Arc<Queue>, stop: Arc<AtomicBool>) {
                     pcm: seg.clone(),
                     is_final: false,
                     created: Instant::now(),
-                    reuse_ok: false,
+                    reuse_len: 0,
                 });
                 partial_voiced = voiced;
+                partial_len = seg.len();
                 last_sub = Instant::now();
             }
         }
@@ -373,6 +422,7 @@ fn worker(
     log: LogFn,
     whisper_ready: Arc<AtomicBool>,
     llama_ready: Arc<AtomicBool>,
+    vad_ready: Arc<AtomicBool>,
     slow: Arc<AtomicBool>,
     sep_model: PathBuf,
 ) {
@@ -407,15 +457,15 @@ fn worker(
 
     let mut last_final = String::new();
     let mut last_final_at = Instant::now();
-    // Son kısmi Whisper sonucu: (segment, metin, dil adı, sessizlik olasılığı, logprob)
-    let mut last_partial: Option<(u64, String, String, f32, f32)> = None;
+    let mut last_partial: Option<Partial> = None;
     let mut recent_langs: VecDeque<&'static str> = VecDeque::new();
+    let mut whisper_slow = false;
 
     while let Some(job) = queue.pop(&stop) {
         if !whisper_ready.load(Ordering::Relaxed) {
             continue;
         }
-        if !job.is_final && slow.load(Ordering::Relaxed) && llama_ready.load(Ordering::Relaxed) {
+        if !job.is_final && (whisper_slow || (slow.load(Ordering::Relaxed) && llama_ready.load(Ordering::Relaxed))) {
             continue;
         }
         // Geliştirme: ECHOSUB_DUMP_DIR verilirse her final parçanın sesini WAV olarak kaydet.
@@ -429,7 +479,8 @@ fn worker(
             }
         }
         let q_ms = job.created.elapsed().as_millis() as u64;
-        let s = settings.lock().unwrap().clone();
+        let mut s = settings.lock().unwrap().clone();
+        s.use_vad = s.use_vad && vad_ready.load(Ordering::Relaxed);
         let clear = |lang: &str| Caption {
             seg_id: job.seg_id,
             is_final: job.is_final,
@@ -442,21 +493,23 @@ fn worker(
         };
 
         let t_w = Instant::now();
-        let reused = if job.is_final && job.reuse_ok {
-            last_partial.as_ref().filter(|(id, ..)| *id == job.seg_id).cloned()
-        } else {
-            None
-        };
+        let reused = reusable_partial(&last_partial, &job);
         let sticky = sticky_lang(&recent_langs);
         let was_reused = reused.is_some();
         let (mut text, mut language, mut no_speech, mut lp, mut w_ms) = match reused {
-            Some((_, text, language, ns, lp)) => (text, language, ns, lp, 0),
+            Some(p) => (p.text, p.language, p.no_speech, p.lp, 0),
             None => match transcribe_sticky(&job.pcm, &s, sticky) {
                 Ok(t) => {
                     let text = collapse_repeats(&t.text.split_whitespace().collect::<Vec<_>>().join(" "));
                     if !job.is_final {
-                        last_partial =
-                            Some((job.seg_id, text.clone(), t.language.clone(), t.no_speech, t.avg_logprob));
+                        last_partial = Some(Partial {
+                            seg_id: job.seg_id,
+                            len: job.pcm.len(),
+                            text: text.clone(),
+                            language: t.language.clone(),
+                            no_speech: t.no_speech,
+                            lp: t.avg_logprob,
+                        });
                     }
                     (text, t.language, t.no_speech, t.avg_logprob, t_w.elapsed().as_millis() as u64)
                 }
@@ -466,6 +519,10 @@ fn worker(
                 }
             },
         };
+
+        if !was_reused {
+            whisper_slow = w_ms > WHISPER_SLOW_MS;
+        }
 
         // Yedek: parça okunamadıysa (boş/uydurma/düşük güven) vokali ayırıp yeniden dene.
         // Yalnızca final parçalarda; normal konuşmada hiç devreye girmez.
@@ -763,7 +820,7 @@ fn transcribe(pcm: &[f32], s: &Settings) -> Result<Transcript, String> {
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
     let resp = ureq::post(&format!("http://127.0.0.1:{WHISPER_PORT}/inference"))
-        .timeout(Duration::from_secs(30))
+        .timeout(HTTP_TIMEOUT)
         .set("Content-Type", &format!("multipart/form-data; boundary={boundary}"))
         .send_bytes(&body)
         .map_err(|e| e.to_string())?
@@ -811,7 +868,7 @@ any additional explanations or commentary. Please translate the following {sn} t
         "stop": ["<end_of_turn>"],
     });
     let resp = ureq::post(&format!("http://127.0.0.1:{LLAMA_PORT}/completion"))
-        .timeout(Duration::from_secs(30))
+        .timeout(HTTP_TIMEOUT)
         .set("Content-Type", "application/json")
         .send_string(&req.to_string())
         .map_err(|e| e.to_string())?
@@ -924,7 +981,21 @@ mod tests {
     // ------------------------------------------------------------ kuyruklar
 
     fn job(id: u64, is_final: bool) -> Job {
-        Job { seg_id: id, pcm: vec![0.0; 10], is_final, created: Instant::now(), reuse_ok: false }
+        Job { seg_id: id, pcm: vec![0.0; 10], is_final, created: Instant::now(), reuse_len: 0 }
+    }
+
+    #[test]
+    fn final_reuses_a_partial_only_if_it_is_the_last_one_requested() {
+        let p = |seg_id, len| {
+            Some(Partial { seg_id, len, text: "x".into(), language: "en".into(), no_speech: 0.0, lp: 0.0 })
+        };
+        let fin = |id, reuse_len| Job { reuse_len, ..job(id, true) };
+        assert!(reusable_partial(&p(3, 1600), &fin(3, 1600)).is_some());
+        // Son kısmi iş (2400 örnek) kuyrukta düştü; elimizde daha eski sonuç var: son kelimeler eksik olur.
+        assert!(reusable_partial(&p(3, 1600), &fin(3, 2400)).is_none());
+        assert!(reusable_partial(&p(2, 1600), &fin(3, 1600)).is_none(), "başka segment");
+        assert!(reusable_partial(&p(3, 1600), &fin(3, 0)).is_none(), "yeni konuşma var");
+        assert!(reusable_partial(&None, &fin(3, 1600)).is_none());
     }
 
     #[test]
@@ -950,6 +1021,16 @@ mod tests {
         q.push(job(7, true));
         q.push(job(7, true));
         assert_eq!(q.items.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn queue_drops_the_oldest_finals_when_it_cannot_keep_up() {
+        let q = Queue::default();
+        for id in 1..=(MAX_PENDING_FINALS as u64 + 2) {
+            q.push(job(id, true));
+        }
+        let ids: Vec<u64> = q.items.lock().unwrap().iter().map(|j| j.seg_id).collect();
+        assert_eq!(ids, (3..=(MAX_PENDING_FINALS as u64 + 2)).collect::<Vec<_>>());
     }
 
     #[test]

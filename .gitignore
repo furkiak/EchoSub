@@ -5,6 +5,7 @@
 /app/runtime/
 /runtime/
 /build-src/
+/dist/
 *.log
 # Görsel üretim ara dosyaları
 /tools/screenshots/_gen/

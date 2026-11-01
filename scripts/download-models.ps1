@@ -1,4 +1,4 @@
-# Modelleri runtime\models altına indirir. Kullanım: .\download-models.ps1 [-Quality fast|balanced|quality]
+﻿# Modelleri runtime\models altına indirir. Kullanım: .\download-models.ps1 [-Quality fast|balanced|quality]
 param([ValidateSet('fast', 'balanced', 'quality')][string]$Quality = 'balanced')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'

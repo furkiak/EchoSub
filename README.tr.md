@@ -63,14 +63,14 @@ Her şey `127.0.0.1` üzerinden konuşan yerel süreçlerdir. Tek ağ trafiği, 
 
 | | Asgari (kullanılabilir) | Önerilen |
 |---|---|---|
-| **İşletim sistemi** | Windows 10/11 · PipeWire ya da PulseAudio'lu Linux (glibc 2.38+, örn. Ubuntu 24.04) · macOS 14.6+ | Windows 11 |
+| **İşletim sistemi** | Windows 10/11 · PipeWire ya da PulseAudio'lu Linux (glibc 2.39+, örn. Ubuntu 24.04) · macOS 14.6+ | Windows 11 |
 | **Ekran kartı** | Yaklaşık 4 GB VRAM'li herhangi bir Vulkan 1.2 kartı (AMD, NVIDIA, Intel) ya da Apple Silicon | 8 GB+ VRAM (*kaliteli* mod için 16 GB) |
-| **İşlemci / RAM** | 4 çekirdek, 8 GB RAM (yalnızca işlemciyle çalışır ama çok daha yavaştır) | 8+ çekirdek, 16 GB RAM |
+| **İşlemci / RAM** | AVX2 destekli 4 çekirdek (2013 sonrası Intel, AMD Zen ve üstü), 8 GB RAM. Yalnızca işlemciyle çalışır ama çok daha yavaştır | 8+ çekirdek, 16 GB RAM |
 | **Disk** | Yaklaşık 3 GB (*hızlı*/*dengeli*), yaklaşık 8 GB (*kaliteli*) | SSD |
 
 Ön ayara göre disk kullanımı (yalnızca modeller): *hızlı* ≈ 2,8 GB, *dengeli* ≈ 3,1 GB, *kaliteli* ≈ 7,9 GB.
 
-Windows'ta ayrıca Microsoft Edge WebView2 çalışma zamanı (Windows 11'de ve güncel Windows 10'da hazır gelir) ve [Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist) gerekir (çoğu bilgisayarda kurulu). `echosub.exe` ya da bir sunucu eksik DLL hatasıyla açılmazsa onu kur.
+Windows'ta ayrıca Microsoft Edge WebView2 çalışma zamanı (Windows 11'de ve güncel Windows 10'da hazır gelir) ve `vulkan-1.dll` dosyasını sağlayan bir ekran kartı sürücüsü gerekir. Visual C++ çalışma zamanı pakete dahildir.
 
 ## Ekran kartı desteği
 
@@ -107,9 +107,18 @@ Her kartı test edemeyiz. Kartın sorun çıkarırsa iki günlük dosyası ve `v
 
 Komut satırını tercih edersen ya da internetsiz bir bilgisayarı hazırlayacaksan: `scripts/download-models.ps1 -Quality balanced` (`fast` | `balanced` | `quality`) aynı dosyaları `runtime/models` içine koyar. Kalite ayarını sonradan değiştirince yeni modeller eksikse indirme penceresi yine açılır; *Ayarlar → Modelleri indir / denetle* ile de istediğin an açabilirsin.
 
-### Linux / macOS
+EchoSub'ın görev çubuğu simgesi yoktur: ekranın altındaki şeffaf şerittir. Ayarlar ve kapatma için üzerine gel. Zaten açıkken ikinci kez başlatmak bir şey yapmaz.
 
-Sürüm arşivlerini CI üretir, ancak bu platformlar henüz gerçek donanımda doğrulanmadı ([Durum](#durum)). Kaynaktan derlemek için:
+### Linux / macOS (hazır sürüm)
+
+Bu paketleri CI üretir, ancak henüz gerçek masaüstü donanımında doğrulanmadı ([Durum](#durum)).
+
+Arşivi aç ve `./echosub` komutunu çalıştır; ilk açılış Windows'taki gibidir.
+
+- **Linux**'ta WebKitGTK çalışma zamanı ve bir ses sunucusu gerekir: `sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libasound2t64` (Ubuntu 24.04). Ses, varsayılan çıkışın monitör kaynağından PulseAudio ya da PipeWire (`pipewire-pulse`) üzerinden alınır.
+- **macOS:** İndirilen paket imzasız olduğu için önce karantina işaretini kaldır: `xattr -dr com.apple.quarantine echosub-*-macos-arm64`. Sistem ilk seferde ses yakalama izni ister.
+
+### Kaynaktan derleme
 
 ```bash
 scripts/build-sidecars.sh            # whisper-server ve llama-server (Linux'ta Vulkan, macOS'ta Metal)
@@ -117,8 +126,9 @@ scripts/download-models.sh balanced  # fast | balanced | quality
 cd app && cargo run --release
 ```
 
-Linux'ta önce `libwebkit2gtk-4.1-dev libgtk-3-dev libasound2-dev libpulse-dev` ve bir Vulkan sürücüsü kur.
-macOS ilk çalıştırmada ses yakalama izni ister.
+Bunun için gereken Ubuntu 24.04 paketleri: `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libasound2-dev libvulkan-dev glslc glslang-tools spirv-headers ninja-build cmake` ve bir Vulkan sürücüsü.
+
+Windows'ta `scripts\build-sidecars.ps1` betiğini *x64 Native Tools* kabuğundan çalıştır (C++ bileşenli Visual Studio 2022, CMake, Ninja ve Vulkan SDK gerekir). Betik, whisper.cpp ve llama.cpp'nin denenmiş sabit sürümlerini derler.
 
 ## Kullanım
 
@@ -139,7 +149,7 @@ macOS ilk çalıştırmada ses yakalama izni ister.
 
 Ayarlar, işletim sisteminin yapılandırma klasöründeki `settings.json` dosyasında saklanır (Windows'ta
 `%APPDATA%\com.echosub.app`, Linux'ta `~/.config/com.echosub.app`, macOS'ta `~/Library/Application Support/com.echosub.app`).
-Sunucu günlükleri `runtime/logs` klasörüne yazılır.
+Günlükler `runtime/logs` klasörüne yazılır. Uygulamanın duyduğu ve çevirdiği metinler, `ECHOSUB_LOG_CAPTIONS=1` ile başlatmadıkça buraya kaydedilmez.
 
 ### Kalite ön ayarları
 
@@ -162,13 +172,15 @@ Sunucu günlükleri `runtime/logs` klasörüne yazılır.
 
 Gecikme ekran kartına bağlıdır; yavaş kartlarda *hızlı* mod önerilir. Şarkılarda altyazı yalnızca son parçalarda görünür, canlı kısmi altyazı yoktur.
 
+Ekran kartı olmadan (i9-14900K'nın 8 çekirdeği, Linux): *hızlı* cümle başına yaklaşık 5-10 sn, *dengeli* 25 sn'nin üstünde sürer; bu, kesintisiz konuşmaya yetişemez. *Hızlı* ayarı kullan. Makine geride kalınca kısmi altyazılar atlanır ve sırada yalnızca en yeni üç cümle bekler; yani altyazı giderek geriye düşmek yerine cümle atlayabilir.
+
 ## Durum
 
 | Platform | Durum |
 |---|---|
 | Windows 10/11 | Burada geliştirildi ve test edildi; otomatik tıklama geçirme testi dahil |
-| Linux | CI'da derleniyor. **Gerçek donanımda henüz test edilmedi.** Wayland imleç konumunu vermeyebilir; bu durumda tıklama geçirme kendiliğinden kapanır ve katman tamamen tıklanabilir kalır |
-| macOS | CI'da derleniyor. **Gerçek donanımda henüz test edilmedi.** Sistem sesi yakalama için macOS 14.6+ gerekir |
+| Linux | Paket, Ubuntu 24.04'te WSLg ve PulseAudio altında işlemciyle baştan sona çalıştırıldı: model indirme, hoparlör sesi yakalama, tanıma, çeviri. **Masaüstü kurulumunda, ekran kartıyla ve PipeWire ile henüz test edilmedi.** Wayland imleç konumunu vermeyebilir; bu durumda tıklama geçirme kendiliğinden kapanır ve katman tamamen tıklanabilir kalır |
+| macOS | CI'da derlenip paketleniyor. **Gerçek donanımda henüz test edilmedi.** Sistem sesi yakalama için macOS 14.6+ gerekir |
 
 Bilinen sınırlamalar:
 
@@ -179,6 +191,8 @@ Bilinen sınırlamalar:
 ## Sorun giderme
 
 - **"Çeviri kapalı":** Çeviri modeli ya da `llama-server` eksik. *Ayarlar → Modelleri indir / denetle* penceresini aç ve `runtime/logs/llama.log` dosyasına bak.
+- **"Konuşma sunucusu çöktü":** `runtime/logs/whisper.log` dosyasının son satırlarına bak. Ekran kartı sürücüsünü güncelle; hazır paketler AVX2'siz işlemcileri desteklemez.
+- **"… portu başka bir program tarafından kullanılıyor":** 18080 ya da 18081 portunu başka bir program tutuyor; çoğunlukla Linux veya macOS'ta bir çökmeden kalan sunucudur. Onu kapatıp EchoSub'ı yeniden başlat.
 - **Hiç altyazı yok:** Varsayılan çıkış aygıtında gerçekten ses çaldığından ve durum mesajının "hazır" dediğinden emin ol. Günlükler: `runtime/logs/app.log` ve `whisper.log`.
 - **Kaliteli modda altyazı geriden geliyor:** *Dengeli* ya da *hızlı* moda geç ya da vokal ayırma yedeğini kapat.
 - **Linux'ta tıklamalar geçmiyor:** Bazı Wayland ortamlarında beklenen durum; [Durum](#durum) bölümüne bak.
@@ -188,7 +202,7 @@ Bilinen sınırlamalar:
 
 ```bash
 cd app
-cargo test --release     # 33 birim testi: ayarlar, diller, yeniden örnekleyici, kuyruklar, çöp/döngü filtreleri, WAV, ayırma yardımcıları, model indirici (devam, iptal)
+cargo test --release     # birim testleri: ayarlar, diller, yeniden örnekleyici, kuyruklar, çöp/döngü filtreleri, WAV, ayırma yardımcıları, model indirici (devam, iptal), sunucu denetimi
 cargo build --release
 ```
 
@@ -196,17 +210,17 @@ Entegrasyon ve araçlar:
 
 - `tests/click-through/clicktest.ps1`, katmanın altına bir hedef pencere koyan bir Windows testidir. Altyazılara tıklamanın hedefe ulaştığını, üst şeride tıklamanın ulaşmadığını ve sürükleme/boyutlandırmanın çalıştığını denetler.
 - `tools/screenshots/make-screenshots.ps1`, `docs/images` içindeki tüm görselleri gerçek arayüz dosyalarından, sahte bir Tauri API'si ve headless Edge ile yeniden üretir.
-- GitHub Actions (`.github/workflows`) testleri Windows, Ubuntu ve macOS'ta çalıştırır; `v*` etiketi gönderince sürüm paketlerini üretir.
+- GitHub Actions (`.github/workflows`) testleri Windows, Ubuntu ve macOS'ta çalıştırır; `v*` etiketi gönderince sürüm paketlerini üretir. Her paket yayımlanmadan önce bir denetimden geçer: iki sunucu da paketten açılmalı, Windows ve Linux işlemci kütüphanelerinde AVX-512 kodu olmamalı.
 
-Geliştirici yardımcıları (ortam değişkenleri): özel `runtime` klasörü için `ECHOSUB_HOME`, son ses parçalarını WAV olarak kaydetmek için
-`ECHOSUB_DUMP_DIR` ve vokal ayırmayı komut satırından denemek için `echosub --separate girdi.wav cikti.wav model.onnx`.
+Geliştirici yardımcıları: özel `runtime` klasörü için `ECHOSUB_HOME`, son ses parçalarını WAV olarak kaydetmek için `ECHOSUB_DUMP_DIR`,
+altyazı ve süreleri `app.log` dosyasına yazmak için `ECHOSUB_LOG_CAPTIONS=1` ve vokal ayırmayı komut satırından denemek için `echosub --separate girdi.wav cikti.wav model.onnx`.
 
 ## Proje yapısı
 
 ```
 app/                Tauri uygulaması (Rust arka uç + düz HTML/JS arayüz)
-  src/              ses yakalama, hat, sunucu yönetimi, vokal ayırma, ayarlar
-  ui/               katman ve ayarlar pencereleri
+  src/              ses yakalama, hat, sunucu yönetimi, model indirici, vokal ayırma, ayarlar
+  ui/               katman, ayarlar ve model indirme pencereleri
 scripts/            çıkarım sunucularını derle, çevrimdışı model indirme
 tests/              entegrasyon testleri
 tools/screenshots/  dokümantasyon görsel üretici
