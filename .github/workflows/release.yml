@@ -84,10 +84,26 @@ jobs:
         with:
           name: ${{ matrix.name }}
           path: dist/echosub-*.*
+      - name: Release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          {
+            echo "## EchoSub $V"
+            echo
+            awk -v v="[$V]" '/^## \[/ { p = index($0, v) > 0; next } p' CHANGELOG.md
+            echo
+            echo "### Install"
+            echo "Download the archive for your system, unzip it and run \`echosub\`. On first start EchoSub asks before downloading the AI models (about 3.1 GB, once). Details in the README."
+            echo
+            echo "> Windows is tested on real hardware. Linux and macOS packages are built by CI but not yet validated on real hardware."
+          } > release-notes.md
+          cat release-notes.md
       - name: Publish release asset
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/echosub-*.*
-          generate_release_notes: true
+          body_path: release-notes.md
           prerelease: true   # Linux/macOS paketleri henüz gerçek donanımda doğrulanmadı

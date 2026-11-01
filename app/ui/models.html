@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoSub – Modeller</title>
+<style>
+  :root { color-scheme: dark; --bg:#14161d; --card:#1d2029; --line:#2c303d; --fg:#e8eaf0; --mut:#9aa1b3; --acc:#ffc400; --ok:#6ee7a0; --err:#ff7b7b; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:20px; background:var(--bg); color:var(--fg); font:14px "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size:17px; margin:0 0 6px; }
+  p { margin:6px 0; color:var(--mut); line-height:1.5; }
+  ul { list-style:none; margin:14px 0; padding:0; border:1px solid var(--line); border-radius:10px; background:var(--card); }
+  li { display:flex; align-items:center; gap:10px; padding:9px 14px; border-bottom:1px solid var(--line); }
+  li:last-child { border-bottom:0; }
+  li .name { flex:1 1 auto; min-width:0; }
+  li .name small { display:block; color:var(--mut); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  li .size { color:var(--mut); font-variant-numeric:tabular-nums; }
+  li .mark { width:18px; text-align:center; color:var(--mut); }
+  li.done .mark { color:var(--ok); }
+  li.now .mark { color:var(--acc); }
+  #bar { height:10px; border-radius:6px; background:#10121a; border:1px solid var(--line); overflow:hidden; margin:14px 0 6px; display:none; }
+  #fill { height:100%; width:0; background:var(--acc); transition:width .15s linear; }
+  #info { color:var(--mut); font-size:12px; min-height:18px; font-variant-numeric:tabular-nums; }
+  #msg { margin-top:8px; min-height:20px; }
+  #msg.err { color:var(--err); }
+  #msg.ok { color:var(--ok); }
+  .btns { display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
+  button { font:inherit; padding:8px 16px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--acc); color:#1a1500; border-color:var(--acc); font-weight:600; }
+  button:disabled { opacity:.45; cursor:default; }
+  .note { font-size:12px; margin-top:14px; }
+</style>
+</head>
+<body>
+<h1 id="title">Modeller kontrol ediliyor…</h1>
+<p id="lead"></p>
+<ul id="list"></ul>
+<div id="bar"><div id="fill"></div></div>
+<div id="info"></div>
+<div id="msg"></div>
+<div class="btns">
+  <button id="later">Şimdi değil</button>
+  <button id="cancel" style="display:none">İptal</button>
+  <button id="go" class="primary">İndir</button>
+</div>
+<p class="note">Modeller bir kez indirilir ve bu bilgisayarda saklanır. Sonrasında EchoSub internet olmadan çalışır; ses ve çeviri hiçbir zaman bilgisayardan çıkmaz.</p>
+<script src="models.js"></script>
+</body>
+</html>

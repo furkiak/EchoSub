@@ -380,7 +380,8 @@ fn worker(
     let mut separator: Option<Separator> = None;
     let mut sep_failed = false;
     let load_separator = |separator: &mut Option<Separator>, failed: &mut bool, log: &LogFn| {
-        if separator.is_some() || *failed {
+        // Model henüz indirilmediyse "başarısız" saymayız; indirilince ilk ihtiyaçta yüklenir.
+        if separator.is_some() || *failed || !sep_model.exists() {
             return;
         }
         let t = Instant::now();

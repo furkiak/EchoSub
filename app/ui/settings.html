@@ -25,6 +25,8 @@
     background:linear-gradient(135deg,#3a5a40,#344e6b 50%,#6b3a4e); text-align:center; padding:8px; overflow:hidden; }
   #status { margin-top:6px; color:var(--mut); font-size:12px; }
   .hint { color:var(--mut); font-size:12px; margin:2px 0 0; }
+  button { font:inherit; padding:5px 12px; border-radius:6px; border:1px solid var(--line); background:#10121a; color:var(--fg); cursor:pointer; }
+  button:hover { border-color:var(--acc); }
 </style>
 </head>
 <body>
@@ -47,7 +49,8 @@
   <div class="row"><label for="use_vad">Müzik/gürültü filtresi (VAD)</label><div class="ctl"><input type="checkbox" id="use_vad"></div></div>
   <div class="row"><label for="use_separation">Anlaşılmayan seslerde vokal ayır</label><div class="ctl"><input type="checkbox" id="use_separation"></div></div>
   <p class="hint">Şarkı/müzik gibi okunamayan parçalarda sesi enstrümandan ayırıp yeniden dener. Yalnızca o parçalarda gecikmeyi artırır.</p>
-  <p class="hint">Kalite veya filtre değişince modeller yeniden yüklenir.</p>
+  <p class="hint">Kalite veya filtre değişince modeller yeniden yüklenir. Eksik modeller için indirme penceresi açılır.</p>
+  <div class="row"><label>Model dosyaları</label><div class="ctl"><button type="button" id="open_models">Modelleri indir / denetle</button></div></div>
 </fieldset>
 
 <fieldset><legend>Görünüm</legend>

@@ -70,6 +70,8 @@ Everything runs as local processes talking over `127.0.0.1`. The only network tr
 
 Disk use per preset: *fast* about 2.8 GB, *balanced* about 3.1 GB, *quality* about 7.9 GB (models only).
 
+On Windows the app also needs the Microsoft Edge WebView2 runtime (already part of Windows 11 and current Windows 10) and the [Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist) (installed on most PCs). If `echosub.exe` or a server does not start with a missing-DLL error, install it.
+
 ## GPU support
 
 All GPU work goes through vendor-neutral back ends, so no vendor-specific build is needed.
@@ -97,11 +99,13 @@ We cannot test every card. If yours misbehaves, please open an issue with the tw
 ### Windows (release build)
 
 1. Download `echosub-<version>-windows-x64.zip` from [Releases](https://github.com/furkiak/EchoSub/releases) and unzip it.
-2. Download the models once (choose `fast`, `balanced` or `quality`):
-   ```powershell
-   .\scripts\download-models.ps1 -Quality balanced
-   ```
-3. Run `echosub.exe`, then play any audio. The first start loads the models and takes a few seconds; a small status message shows when it is ready.
+2. Run `echosub.exe`. On first start EchoSub notices that the AI models are missing, tells you how much it will download (about 3.1 GB for the default *balanced* preset) and asks before it starts. Downloads resume if interrupted.
+
+   ![Model download window](docs/images/models.png)
+
+3. When the download finishes the models load automatically (a few seconds); play any audio and captions appear. A small status message shows when it is ready.
+
+Prefer the command line, or want to prepare an offline machine? `scripts/download-models.ps1 -Quality balanced` (`fast` | `balanced` | `quality`) puts the same files into `runtime/models`. Switching the quality preset later opens the download window again if the new models are missing, and *Settings → Download / check models* reopens it any time.
 
 ### Linux / macOS
 
@@ -171,11 +175,11 @@ Known limitations:
 
 - Mistranslation when the speech is misheard, and unreliable language detection on very short clips.
 - The overlay UI is currently in Turkish; the translation target can be any supported language.
-- No installer and no in-app model downloader yet.
+- No installer yet (portable archive only).
 
 ## Troubleshooting
 
-- **"Çeviri kapalı" / translation off:** the translation model or `llama-server` is missing. Run the download script and check `runtime/logs/llama.log`.
+- **"Çeviri kapalı" / translation off:** the translation model or `llama-server` is missing. Open *Settings → Download / check models* and check `runtime/logs/llama.log`.
 - **No captions at all:** check that something is actually playing on the default output device and that the status message says it is ready. Logs: `runtime/logs/app.log` and `whisper.log`.
 - **Captions lag with the *quality* preset:** switch to *balanced* or *fast*, or turn off the vocal-separation fallback.
 - **Clicks do not pass through on Linux:** expected on some Wayland compositors; see [Status](#status).
@@ -185,7 +189,7 @@ Known limitations:
 
 ```bash
 cd app
-cargo test --release     # 27 unit tests: settings, languages, resampler, queues, junk/loop filters, WAV, separation helpers
+cargo test --release     # 33 unit tests: settings, languages, resampler, queues, junk/loop filters, WAV, separation helpers, model downloader (resume, cancel)
 cargo build --release
 ```
 
@@ -202,9 +206,9 @@ final audio segments as WAV files, and `echosub --separate in.wav out.wav model.
 
 ```
 app/                Tauri app (Rust backend + plain HTML/JS UI)
-  src/              audio capture, pipeline, sidecar control, vocal separation, settings
-  ui/               overlay and settings windows
-scripts/            build the inference servers, download models
+  src/              audio capture, pipeline, sidecar control, model downloader, vocal separation, settings
+  ui/               overlay, settings and model-download windows
+scripts/            build the inference servers, offline model download
 tests/              integration tests
 tools/screenshots/  documentation image generator
 docs/images/        logo, banner, screenshots, diagram
@@ -212,7 +216,7 @@ docs/images/        logo, banner, screenshots, diagram
 
 ## Roadmap
 
-- First-run model downloader and installers (MSI/NSIS, AppImage/deb, dmg)
+- Installers (MSI/NSIS, AppImage/deb, dmg)
 - Validate and tune Linux and macOS
 - Localised UI
 - Live partial captions for sung vocals

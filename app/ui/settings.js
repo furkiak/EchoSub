@@ -64,6 +64,8 @@
     });
   }
 
+  $('open_models').addEventListener('click', () => invoke('open_models'));
+
   const show = s => { $('status').textContent = s.msg ? `Durum: ${s.msg}` : ''; };
   listen('status', ev => show(ev.payload));
   invoke('get_status').then(show);

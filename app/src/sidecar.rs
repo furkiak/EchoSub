@@ -35,8 +35,11 @@ impl Paths {
         let file = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
         self.home.join(sub).join(file)
     }
+    pub fn model_dir(&self) -> PathBuf {
+        self.home.join("models")
+    }
     pub fn model(&self, file: &str) -> PathBuf {
-        self.home.join("models").join(file)
+        self.model_dir().join(file)
     }
     pub fn log_dir(&self) -> PathBuf {
         self.home.join("logs")

@@ -3,8 +3,17 @@
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.2.0]
 ### Added
+- First-run model downloader: EchoSub detects missing models, shows what will be downloaded and asks before starting. Progress, cancel, resume after interruption, and automatic model loading when the download finishes. Reopen it from *Settings → Download / check models*; switching the quality preset opens it again if the new models are missing.
 - GPU support documentation for AMD, NVIDIA and Intel (Vulkan), with an optional CUDA build (`-Backend cuda` / `BACKEND=cuda`) and a CPU-only build option.
+- Release workflow: portable Windows (zip), Linux and macOS (tar.gz) packages built by CI on every `v*` tag.
+
+### Fixed
+- Windows release package: `llama-server` failed to start because it was linked against OpenSSL DLLs that were not shipped (OpenSSL is now disabled in the sidecar builds).
+- Vocal separation model that was downloaded after start-up is now picked up without restarting.
+- CI: Ubuntu link errors (needs 24.04), macOS CoreML link error (`clang_rt.osx`), Windows `link.exe` shadowed by Git's.
 
 ## [0.1.0] - first public preview
 ### Added
@@ -21,4 +30,4 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ### Known limitations
 - Linux and macOS builds are compiled in CI but not yet validated on real hardware.
-- No installer and no first-run model downloader yet (use `scripts/download-models`).
+- No installer yet (portable archives only).

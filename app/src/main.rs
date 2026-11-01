@@ -2,6 +2,7 @@
 
 mod audio;
 mod langs;
+mod models;
 mod pipeline;
 mod separate;
 mod settings;
@@ -13,7 +14,7 @@ use settings::Settings;
 use sidecar::{Paths, Sidecars, LLAMA_PORT, WHISPER_PORT};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
@@ -32,6 +33,11 @@ struct App {
     sidecars: Arc<Mutex<Sidecars>>,
     status: Mutex<Status>,
     boot_lock: Mutex<()>,
+    /// Model indirmesi sürüyor mu / iptal istendi mi.
+    dl_active: AtomicBool,
+    dl_cancel: AtomicBool,
+    /// İndirme penceresini hangi eksik model kümesi için en son açtık (aynı küme için tekrar açma).
+    asked: Mutex<Vec<String>>,
 }
 
 fn log_line(paths: &Paths, msg: &str) {
@@ -62,6 +68,26 @@ fn boot(app: AppHandle) {
     st.pipeline.llama_ready.store(false, Ordering::Relaxed);
     st.sidecars.lock().unwrap().stop();
     let s = st.settings.lock().unwrap().clone();
+
+    // Eksik model varsa kullanıcıya sor (aynı eksik kümesi için bir kez).
+    let miss = models::missing(&st.paths, &s);
+    if !miss.is_empty() && !st.dl_active.load(Ordering::Relaxed) {
+        let key: Vec<String> = miss.iter().map(|m| m.file.to_string()).collect();
+        let first_time = {
+            let mut asked = st.asked.lock().unwrap();
+            let fresh = *asked != key;
+            *asked = key;
+            fresh
+        };
+        if first_time {
+            open_models_window(&app);
+        }
+    }
+    let (wm, _) = s.model_files();
+    if !models::is_present(&st.paths.model(wm)) {
+        set_status(&app, "error", "Modeller henüz indirilmedi — ayarlardan “Modelleri indir” düğmesini kullan");
+        return;
+    }
 
     set_status(&app, "loading", "Konuşma modeli yükleniyor…");
     let started = st.sidecars.lock().unwrap().start_whisper(&st.paths, &s);
@@ -229,6 +255,111 @@ async fn open_settings(app: AppHandle) {
         .build();
 }
 
+fn open_models_window(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("models") {
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+    let _ = WebviewWindowBuilder::new(app, "models", WebviewUrl::App("models.html".into()))
+        .title("EchoSub – Modeller")
+        .inner_size(520.0, 560.0)
+        .center()
+        .always_on_top(true)
+        .build();
+}
+
+#[tauri::command]
+async fn open_models(app: AppHandle) {
+    open_models_window(&app);
+}
+
+#[derive(Serialize)]
+struct ModelInfo {
+    file: String,
+    label: String,
+    mb: u32,
+    present: bool,
+}
+
+/// Geçerli ayarlar için gereken modeller ve hangilerinin diskte olduğu.
+#[tauri::command]
+fn model_list(state: State<App>) -> Vec<ModelInfo> {
+    let s = state.settings.lock().unwrap().clone();
+    models::required(&s)
+        .into_iter()
+        .map(|m| ModelInfo {
+            file: m.file.into(),
+            label: m.label.into(),
+            mb: m.mb,
+            present: models::is_present(&state.paths.model(m.file)),
+        })
+        .collect()
+}
+
+#[derive(Serialize, Clone)]
+struct DlEvent {
+    file: String,
+    label: String,
+    index: usize,
+    count: usize,
+    done: u64,
+    total: u64,
+}
+
+#[derive(Serialize, Clone)]
+struct DlDone {
+    ok: bool,
+    error: Option<String>,
+}
+
+fn run_download(app: AppHandle) {
+    let st = app.state::<App>();
+    let s = st.settings.lock().unwrap().clone();
+    let todo = models::missing(&st.paths, &s);
+    let dir = st.paths.model_dir();
+    let count = todo.len();
+    let mut result: Result<(), String> = Ok(());
+    for (i, m) in todo.iter().enumerate() {
+        log_line(&st.paths, &format!("indiriliyor: {}", m.file));
+        let r = models::download(m, &dir, &st.dl_cancel, &mut |done, total| {
+            let _ = app.emit(
+                "dl",
+                DlEvent { file: m.file.into(), label: m.label.into(), index: i + 1, count, done, total },
+            );
+        });
+        if let Err(e) = r {
+            result = Err(format!("{}: {e}", m.file));
+            break;
+        }
+    }
+    match &result {
+        Ok(()) => log_line(&st.paths, "model indirme tamamlandı"),
+        Err(e) => log_line(&st.paths, &format!("model indirme durdu: {e}")),
+    }
+    st.dl_active.store(false, Ordering::Relaxed);
+    let ok = result.is_ok();
+    let _ = app.emit("dl_done", DlDone { ok, error: result.err() });
+    if ok {
+        let h = app.clone();
+        std::thread::spawn(move || boot(h));
+    }
+}
+
+#[tauri::command]
+fn download_models(app: AppHandle, state: State<App>) {
+    if state.dl_active.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    state.dl_cancel.store(false, Ordering::Relaxed);
+    std::thread::spawn(move || run_download(app));
+}
+
+#[tauri::command]
+fn cancel_download(state: State<App>) {
+    state.dl_cancel.store(true, Ordering::Relaxed);
+}
+
 #[tauri::command]
 fn quit(app: AppHandle) {
     app.exit(0);
@@ -281,7 +412,8 @@ fn main() {
     }
     let app = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            get_settings, set_settings, get_status, languages, open_settings, quit
+            get_settings, set_settings, get_status, languages, open_settings, quit,
+            open_models, model_list, download_models, cancel_download
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -298,6 +430,9 @@ fn main() {
                 sidecars: Arc::new(Mutex::new(Sidecars::default())),
                 status: Mutex::new(Status { stage: "loading".into(), msg: "Başlatılıyor…".into() }),
                 boot_lock: Mutex::new(()),
+                dl_active: AtomicBool::new(false),
+                dl_cancel: AtomicBool::new(false),
+                asked: Mutex::new(Vec::new()),
             });
             log_line(&paths, &format!("başlatıldı, home={}", paths.home.display()));
 

@@ -70,6 +70,8 @@ Her şey `127.0.0.1` üzerinden konuşan yerel süreçlerdir. Tek ağ trafiği, 
 
 Ön ayara göre disk kullanımı (yalnızca modeller): *hızlı* ≈ 2,8 GB, *dengeli* ≈ 3,1 GB, *kaliteli* ≈ 7,9 GB.
 
+Windows'ta ayrıca Microsoft Edge WebView2 çalışma zamanı (Windows 11'de ve güncel Windows 10'da hazır gelir) ve [Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist) gerekir (çoğu bilgisayarda kurulu). `echosub.exe` ya da bir sunucu eksik DLL hatasıyla açılmazsa onu kur.
+
 ## Ekran kartı desteği
 
 Tüm GPU işi üreticiden bağımsız arka uçlardan geçer; üreticiye özel derleme gerekmez.
@@ -97,11 +99,13 @@ Her kartı test edemeyiz. Kartın sorun çıkarırsa iki günlük dosyası ve `v
 ### Windows (hazır sürüm)
 
 1. [Releases](https://github.com/furkiak/EchoSub/releases) sayfasından `echosub-<sürüm>-windows-x64.zip` dosyasını indirip aç.
-2. Modelleri bir kez indir (`fast`, `balanced` ya da `quality`):
-   ```powershell
-   .\scripts\download-models.ps1 -Quality balanced
-   ```
-3. `echosub.exe` dosyasını çalıştır ve bir ses çal. İlk açılışta modeller yüklenir ve birkaç saniye sürer; hazır olunca küçük bir durum mesajı görünür.
+2. `echosub.exe` dosyasını çalıştır. İlk açılışta EchoSub yapay zekâ modellerinin eksik olduğunu fark eder, ne kadar indireceğini (varsayılan *dengeli* ayar için yaklaşık 3,1 GB) söyler ve başlamadan önce sorar. İndirme yarıda kesilirse kaldığı yerden devam eder.
+
+   ![Model indirme penceresi](docs/images/models.png)
+
+3. İndirme bitince modeller kendiliğinden yüklenir (birkaç saniye); bir ses çal, altyazılar görünür. Hazır olunca küçük bir durum mesajı belirir.
+
+Komut satırını tercih edersen ya da internetsiz bir bilgisayarı hazırlayacaksan: `scripts/download-models.ps1 -Quality balanced` (`fast` | `balanced` | `quality`) aynı dosyaları `runtime/models` içine koyar. Kalite ayarını sonradan değiştirince yeni modeller eksikse indirme penceresi yine açılır; *Ayarlar → Modelleri indir / denetle* ile de istediğin an açabilirsin.
 
 ### Linux / macOS
 
@@ -170,11 +174,11 @@ Bilinen sınırlamalar:
 
 - Konuşma yanlış duyulursa çeviri de yanlış olur; çok kısa kayıtlarda dil algılama güvenilir değildir.
 - Arayüz şu an Türkçe; çeviri hedefi desteklenen herhangi bir dil olabilir.
-- Henüz kurulum paketi ve uygulama içi model indirici yok.
+- Henüz kurulum paketi yok (yalnızca taşınabilir arşiv).
 
 ## Sorun giderme
 
-- **"Çeviri kapalı":** Çeviri modeli ya da `llama-server` eksik. İndirme betiğini çalıştır ve `runtime/logs/llama.log` dosyasına bak.
+- **"Çeviri kapalı":** Çeviri modeli ya da `llama-server` eksik. *Ayarlar → Modelleri indir / denetle* penceresini aç ve `runtime/logs/llama.log` dosyasına bak.
 - **Hiç altyazı yok:** Varsayılan çıkış aygıtında gerçekten ses çaldığından ve durum mesajının "hazır" dediğinden emin ol. Günlükler: `runtime/logs/app.log` ve `whisper.log`.
 - **Kaliteli modda altyazı geriden geliyor:** *Dengeli* ya da *hızlı* moda geç ya da vokal ayırma yedeğini kapat.
 - **Linux'ta tıklamalar geçmiyor:** Bazı Wayland ortamlarında beklenen durum; [Durum](#durum) bölümüne bak.
@@ -184,7 +188,7 @@ Bilinen sınırlamalar:
 
 ```bash
 cd app
-cargo test --release     # 27 birim testi: ayarlar, diller, yeniden örnekleyici, kuyruklar, çöp/döngü filtreleri, WAV, ayırma yardımcıları
+cargo test --release     # 33 birim testi: ayarlar, diller, yeniden örnekleyici, kuyruklar, çöp/döngü filtreleri, WAV, ayırma yardımcıları, model indirici (devam, iptal)
 cargo build --release
 ```
 
@@ -203,7 +207,7 @@ Geliştirici yardımcıları (ortam değişkenleri): özel `runtime` klasörü i
 app/                Tauri uygulaması (Rust arka uç + düz HTML/JS arayüz)
   src/              ses yakalama, hat, sunucu yönetimi, vokal ayırma, ayarlar
   ui/               katman ve ayarlar pencereleri
-scripts/            çıkarım sunucularını derle, modelleri indir
+scripts/            çıkarım sunucularını derle, çevrimdışı model indirme
 tests/              entegrasyon testleri
 tools/screenshots/  dokümantasyon görsel üretici
 docs/images/        logo, banner, ekran görüntüleri, şema
@@ -211,7 +215,7 @@ docs/images/        logo, banner, ekran görüntüleri, şema
 
 ## Yol haritası
 
-- İlk açılışta model indirici ve kurulum paketleri (MSI/NSIS, AppImage/deb, dmg)
+- Kurulum paketleri (MSI/NSIS, AppImage/deb, dmg)
 - Linux ve macOS'u doğrulamak ve iyileştirmek
 - Çok dilli arayüz
 - Şarkı vokalleri için canlı kısmi altyazı
