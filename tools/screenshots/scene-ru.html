@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="scene.css"></head>
+<body>
+<div class="stage" style="background: radial-gradient(ellipse at 50% 120%,#7b2ff7 0%,#3a1c71 40%,#0b0b1e 80%)">
+  <svg viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0;width:100%;height:100%">
+    <g opacity=".5"><path d="M300 0 L560 520 L120 520Z" fill="#ff5fa2"/><path d="M640 0 L860 520 L420 520Z" fill="#5fd0ff"/><path d="M980 0 L1180 520 L760 520Z" fill="#ffd25f"/></g>
+    <rect x="0" y="560" width="1280" height="160" fill="#0a0a18"/>
+    <g fill="#05050c"><circle cx="640" cy="430" r="34"/><rect x="606" y="462" width="68" height="130" rx="26"/>
+       <circle cx="480" cy="460" r="28"/><rect x="452" y="488" width="56" height="104" rx="22"/>
+       <circle cx="800" cy="462" r="28"/><rect x="772" y="490" width="56" height="102" rx="22"/></g>
+    <g fill="#fff" opacity=".7"><circle cx="150" cy="590" r="5"/><circle cx="260" cy="610" r="4"/><circle cx="1050" cy="600" r="5"/><circle cx="1160" cy="585" r="4"/></g>
+  </svg>
+  <div class="tag">♪ Canlı konser · Rusça şarkı</div>
+  <iframe class="overlay" id="ov"></iframe>
+  <div class="player-bar"><span>▶</span><span>1:52 / 3:47</span><div class="track"><i style="width:49%"></i><b style="left:49%"></b></div><span>HD</span></div>
+</div>
+<script>
+document.getElementById('ov').src = '_gen/index.html?' + new URLSearchParams({ orig: '1', lines: JSON.stringify([
+  { lang: 'ru', orig: 'Я иду навстречу утренней заре,', text: 'Sabah şafağına doğru yürüyorum,' },
+  { lang: 'ru', orig: 'и город засыпает позади.', text: 've şehir arkamda uykuya dalıyor.' },
+]) });
+</script></body></html>

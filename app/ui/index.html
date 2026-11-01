@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoSub</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; background: transparent; overflow: hidden;
+    user-select: none; -webkit-user-select: none; cursor: default;
+  }
+  #root {
+    position: absolute; inset: 0; box-sizing: border-box;
+    display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+    padding: 8px 16px;
+  }
+  /* üzerine gelince görünen çerçeve */
+  #frame {
+    position: absolute; inset: 0; border: 2px dashed rgba(255,255,255,.75);
+    border-radius: 8px; background: rgba(0,0,0,.30); opacity: 0; pointer-events: none;
+    transition: opacity .15s;
+  }
+  /* Rust, imleç pencerenin üstündeyken body'ye "hover" sınıfı ekler (tıklama geçirme
+     açıkken WebView fare olayı almadığı için :hover kullanılamaz). */
+  body.hover #frame, body.hover #bar { opacity: 1; }
+  /* İmleç izlenemiyorsa (Wayland) normal :hover kullan. */
+  body.notrack:hover #frame, body.notrack:hover #bar { opacity: 1; }
+  /* Üst şerit: sürükleme alanı + düğmeler. Yüksekliği Rust'taki BAR_PX (38) ile aynı olmalı. */
+  #bar {
+    position: absolute; top: 0; left: 0; right: 0; height: 38px; box-sizing: border-box;
+    display: flex; align-items: center; gap: 6px; padding: 0 8px; opacity: 0;
+    transition: opacity .15s; z-index: 5; background: rgba(0,0,0,.35); border-radius: 8px 8px 0 0;
+  }
+  #drag { flex: 1; height: 100%; display: flex; align-items: center; color: rgba(255,255,255,.7);
+    font: 12px "Segoe UI", sans-serif; cursor: move; padding-left: 6px; }
+  #bar button {
+    width: 28px; height: 28px; border: 0; border-radius: 6px; cursor: pointer;
+    background: rgb(30,32,44); color: #fff; font-size: 15px; line-height: 28px; padding: 0;
+    border: 1px solid rgba(255,255,255,.5);
+  }
+  #bar button:hover { background: rgba(70,70,95,.95); }
+  #bar #close:hover { background: #c0392b; }
+  #caps {
+    position: relative; z-index: 3; /* hover çerçevesinin üstünde kalsın */
+    width: 100%; flex: 1 1 auto; min-height: 0; overflow: hidden;
+    display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+    text-align: center;
+  }
+  .line { width: 100%; word-wrap: break-word; overflow-wrap: anywhere; line-height: 1.22; }
+  .line .orig { opacity: .75; font-size: .62em; font-weight: 400; }
+  #status {
+    position: absolute; left: 10px; bottom: 6px; font: 12px "Segoe UI", sans-serif; color: #fff;
+    background: rgba(20,20,28,.8); padding: 3px 9px; border-radius: 10px; opacity: 0;
+    transition: opacity .3s; pointer-events: none; z-index: 5;
+  }
+  #status.show { opacity: 1; }
+  #status.error { background: rgba(192,57,43,.9); }
+  #status.warn { background: rgba(160,110,0,.9); }
+  /* yeniden boyutlandırma tutamaçları */
+  .g { position: absolute; z-index: 4; }
+  /* Kenar kalınlığı Rust'taki EDGE_PX (9) ile aynı olmalı. */
+  .g.n { top: 0; left: 14px; right: 14px; height: 9px; cursor: ns-resize; }
+  .g.s { bottom: 0; left: 14px; right: 14px; height: 9px; cursor: ns-resize; }
+  .g.e { right: 0; top: 14px; bottom: 14px; width: 9px; cursor: ew-resize; }
+  .g.w { left: 0; top: 14px; bottom: 14px; width: 9px; cursor: ew-resize; }
+  .g.ne { top: 0; right: 0; width: 14px; height: 14px; cursor: nesw-resize; }
+  .g.nw { top: 0; left: 0; width: 14px; height: 14px; cursor: nwse-resize; }
+  .g.se { bottom: 0; right: 0; width: 14px; height: 14px; cursor: nwse-resize; }
+  .g.sw { bottom: 0; left: 0; width: 14px; height: 14px; cursor: nesw-resize; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="frame"></div>
+  <div id="bar">
+    <div id="drag">⠿ Sürükle</div>
+    <button id="gear" title="Ayarlar">⚙</button>
+    <button id="close" title="Kapat">✕</button>
+  </div>
+  <div id="caps"></div>
+  <div id="status"></div>
+  <div class="g n" data-d="North"></div><div class="g s" data-d="South"></div>
+  <div class="g e" data-d="East"></div><div class="g w" data-d="West"></div>
+  <div class="g ne" data-d="NorthEast"></div><div class="g nw" data-d="NorthWest"></div>
+  <div class="g se" data-d="SouthEast"></div><div class="g sw" data-d="SouthWest"></div>
+</div>
+<script src="overlay.js"></script>
+</body>
+</html>

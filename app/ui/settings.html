@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EchoSub – Ayarlar</title>
+<style>
+  :root { color-scheme: dark; --bg:#14161d; --card:#1d2029; --line:#2c303d; --fg:#e8eaf0; --mut:#9aa1b3; --acc:#ffc400; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:14px "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size:16px; margin:0 0 12px; }
+  fieldset { border:1px solid var(--line); border-radius:10px; background:var(--card); margin:0 0 12px; padding:10px 14px 12px; }
+  legend { padding:0 6px; color:var(--acc); font-size:12px; letter-spacing:.04em; text-transform:uppercase; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:8px 0; }
+  .row label { color:var(--mut); flex:0 0 auto; }
+  .row .ctl { flex:1 1 auto; display:flex; justify-content:flex-end; align-items:center; gap:8px; min-width:0; }
+  select, input[type=text], input[type=number] {
+    background:#10121a; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 8px; min-width:0; width:100%; max-width:230px;
+  }
+  input[type=range] { width:100%; max-width:200px; accent-color:var(--acc); }
+  input[type=color] { width:44px; height:28px; border:1px solid var(--line); background:none; padding:0; border-radius:6px; }
+  input[type=checkbox] { width:18px; height:18px; accent-color:var(--acc); }
+  .val { width:44px; text-align:right; color:var(--mut); font-variant-numeric:tabular-nums; }
+  #preview { height:90px; border-radius:10px; margin-bottom:12px; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,#3a5a40,#344e6b 50%,#6b3a4e); text-align:center; padding:8px; overflow:hidden; }
+  #status { margin-top:6px; color:var(--mut); font-size:12px; }
+  .hint { color:var(--mut); font-size:12px; margin:2px 0 0; }
+</style>
+</head>
+<body>
+<h1>EchoSub ayarları</h1>
+<div id="preview"><div id="pv">Merhaba, bu bir önizleme altyazısıdır.</div></div>
+
+<fieldset><legend>Dil</legend>
+  <div class="row"><label for="target_lang">Çeviri dili</label><div class="ctl"><select id="target_lang"></select></div></div>
+  <div class="row"><label for="source_lang">Konuşulan dil</label><div class="ctl"><select id="source_lang"></select></div></div>
+  <div class="row"><label for="show_original">Orijinal metni de göster</label><div class="ctl"><input type="checkbox" id="show_original"></div></div>
+</fieldset>
+
+<fieldset><legend>Performans</legend>
+  <div class="row"><label for="quality">Kalite / hız</label><div class="ctl">
+    <select id="quality">
+      <option value="fast">Hızlı (küçük modeller)</option>
+      <option value="balanced">Dengeli</option>
+      <option value="quality">Kaliteli (büyük çeviri modeli)</option>
+    </select></div></div>
+  <div class="row"><label for="use_vad">Müzik/gürültü filtresi (VAD)</label><div class="ctl"><input type="checkbox" id="use_vad"></div></div>
+  <div class="row"><label for="use_separation">Anlaşılmayan seslerde vokal ayır</label><div class="ctl"><input type="checkbox" id="use_separation"></div></div>
+  <p class="hint">Şarkı/müzik gibi okunamayan parçalarda sesi enstrümandan ayırıp yeniden dener. Yalnızca o parçalarda gecikmeyi artırır.</p>
+  <p class="hint">Kalite veya filtre değişince modeller yeniden yüklenir.</p>
+</fieldset>
+
+<fieldset><legend>Görünüm</legend>
+  <div class="row"><label for="click_through">Altyazı alanından tıklama geçir</label><div class="ctl"><input type="checkbox" id="click_through"></div></div>
+  <p class="hint">Açıkken altyazının üstündeki tıklamalar alttaki pencereye gider. Sürüklemek için üzerine gelince çıkan üst şeridi, boyutlandırmak için kenarları kullan.</p>
+  <div class="row"><label for="font_family">Yazı tipi</label><div class="ctl"><input type="text" id="font_family" list="fonts"></div></div>
+  <datalist id="fonts">
+    <option value="Segoe UI, Arial, sans-serif"><option value="Arial, sans-serif"><option value="Verdana, sans-serif">
+    <option value="Tahoma, sans-serif"><option value="Trebuchet MS, sans-serif"><option value="Georgia, serif">
+    <option value="Times New Roman, serif"><option value="Consolas, monospace"><option value="Courier New, monospace">
+    <option value="Impact, sans-serif"><option value="Comic Sans MS, cursive"><option value="Meiryo, Yu Gothic, sans-serif">
+  </datalist>
+  <div class="row"><label for="auto_fit">Pencereyle birlikte büyü/küçül</label><div class="ctl"><input type="checkbox" id="auto_fit"></div></div>
+  <div class="row"><label id="scale_label" for="font_scale">Yazı boyutu</label><div class="ctl"><input type="range" id="font_scale" min="0.3" max="3" step="0.05"><span class="val" id="font_scale_v"></span></div></div>
+  <div class="row"><label for="bold">Kalın</label><div class="ctl"><input type="checkbox" id="bold"></div></div>
+  <div class="row"><label for="text_color">Yazı rengi</label><div class="ctl"><input type="color" id="text_color"></div></div>
+  <div class="row"><label for="outline_color">Kenar rengi</label><div class="ctl"><input type="color" id="outline_color"></div></div>
+  <div class="row"><label for="outline_width">Kenar kalınlığı</label><div class="ctl"><input type="range" id="outline_width" min="0" max="8" step="0.5"><span class="val" id="outline_width_v"></span></div></div>
+  <div class="row"><label for="bg_color">Arka plan rengi</label><div class="ctl"><input type="color" id="bg_color"></div></div>
+  <div class="row"><label for="bg_opacity">Arka plan opaklığı</label><div class="ctl"><input type="range" id="bg_opacity" min="0" max="1" step="0.05"><span class="val" id="bg_opacity_v"></span></div></div>
+  <div class="row"><label for="lines">Satır sayısı</label><div class="ctl"><input type="number" id="lines" min="1" max="6" style="max-width:80px"></div></div>
+  <div class="row"><label for="hide_after_secs">Kaybolma süresi (sn)</label><div class="ctl"><input type="number" id="hide_after_secs" min="1" max="60" step="1" style="max-width:80px"></div></div>
+</fieldset>
+<div id="status"></div>
+<script src="settings.js"></script>
+</body>
+</html>

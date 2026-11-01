@@ -1,0 +1,35 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1280px; height: 560px; overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; background: #0e1220; color: #e8ecfa; }
+h2 { margin: 0; position: absolute; left: 48px; top: 28px; font-size: 26px; font-weight: 700; }
+h2 small { font-weight: 400; color: #8a95b8; font-size: 16px; margin-left: 12px; }
+.row { position: absolute; left: 48px; right: 48px; display: flex; align-items: stretch; gap: 0; }
+.box { flex: 1; border-radius: 14px; padding: 16px 16px 14px; background: #181e33; border: 1px solid #2c3556; min-height: 138px; }
+.box h3 { margin: 0 0 6px; font-size: 18px; }
+.box p { margin: 0; font-size: 14px; line-height: 1.4; color: #aab4d4; }
+.box .k { display: inline-block; margin-top: 8px; padding: 2px 9px; border-radius: 999px; font-size: 12px; background: #243055; color: #9fd0ff; }
+.arrow { flex: 0 0 38px; display: flex; align-items: center; justify-content: center; color: #6f7cab; font-size: 26px; }
+.a { border-color: #3d5bd9; } .b { border-color: #0e8aa6; } .c { border-color: #c99a00; } .d { border-color: #8a55d9; }
+.opt { border-style: dashed; background: #151a2e; }
+.note { position: absolute; font-size: 14px; color: #8a95b8; }
+</style></head><body>
+<h2>How EchoSub works <small>every stage runs on your machine — no audio or text leaves the computer</small></h2>
+<div class="row" style="top:92px">
+  <div class="box a"><h3>1 · Capture</h3><p>Speaker output loopback, resampled to 16&nbsp;kHz mono as it streams.</p><span class="k">WASAPI · PipeWire/Pulse · CoreAudio</span></div>
+  <div class="arrow">›</div>
+  <div class="box a"><h3>2 · Segment</h3><p>Energy-based phrase detection; partial results every 700&nbsp;ms, final after 400&nbsp;ms of silence.</p><span class="k">Rust</span></div>
+  <div class="arrow">›</div>
+  <div class="box b"><h3>3 · Transcribe</h3><p>Language auto-detect + speech recognition with Silero VAD and sticky language voting.</p><span class="k">whisper.cpp · Vulkan / Metal</span></div>
+  <div class="arrow">›</div>
+  <div class="box c"><h3>4 · Translate</h3><p>Context-free translation into your language with a prompt cache and latest-wins queues.</p><span class="k">TranslateGemma · llama.cpp</span></div>
+  <div class="arrow">›</div>
+  <div class="box d"><h3>5 · Overlay</h3><p>Transparent, click-through, draggable subtitles; the text scales with the window.</p><span class="k">Tauri 2 · HTML/JS</span></div>
+</div>
+<div class="row" style="top:290px; left:48px; right:auto; width:930px">
+  <div class="box opt b" style="border-color:#0e8aa6;flex:none;width:560px"><h3>Fallback · Vocal separation</h3><p>When a segment is unreadable (music, singing), the vocals are isolated and transcribed again. It runs only for those segments, so ordinary speech keeps its low latency.</p><span class="k">UVR MDX-Net · ONNX Runtime · DirectML / CoreML / CPU</span></div>
+</div>
+<div class="note" style="left:640px;top:304px;width:560px;line-height:1.5">
+  <b style="color:#e8ecfa">Typical latency (RX 9070 XT, balanced mode)</b><br>
+  Final caption ≈ 0.6 s after the speaker stops · average transcribe + translate 223 ms · partial captions while you speak.</div>
+<div class="note" style="left:48px;top:470px;width:1180px">Models: Whisper large-v3-turbo (q5_0) or small, TranslateGemma 4B / 12B (Q4_K_M), Silero VAD v5, UVR-MDX-NET Voc_FT. Quality / speed is adjustable in Settings.</div>
+</body></html>

@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="scene.css"></head>
+<body>
+<div class="stage" style="background: linear-gradient(160deg,#0f2027 0%,#203a43 50%,#2c5364 100%)">
+  <svg viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0;width:100%;height:100%">
+    <rect x="140" y="90" width="1000" height="360" rx="10" fill="#0c1a22" stroke="#3b6478" stroke-width="2"/>
+    <g fill="#3b6478" opacity=".7"><rect x="180" y="130" width="420" height="16" rx="8"/><rect x="180" y="170" width="620" height="12" rx="6"/>
+      <rect x="180" y="200" width="540" height="12" rx="6"/><rect x="180" y="230" width="600" height="12" rx="6"/></g>
+    <rect x="700" y="290" width="380" height="120" rx="8" fill="#17323f"/>
+  </svg>
+  <div class="tag">Hover: üst şerit, ayar ve kapat düğmeleri belirir</div>
+  <iframe class="overlay" id="ov"></iframe>
+  <div class="player-bar"><span>▶</span><span>7:21 / 18:40</span><div class="track"><i style="width:40%"></i><b style="left:40%"></b></div><span>HD</span></div>
+</div>
+<script>
+document.getElementById('ov').src = '_gen/index.html?' + new URLSearchParams({ hover: '1', lines: JSON.stringify([
+  { lang: 'en', text: 'Önce modelin bellekte hazır olduğundan emin olun.' },
+]) });
+</script></body></html>

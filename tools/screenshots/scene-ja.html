@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="scene.css"></head>
+<body>
+<div class="stage" style="background: linear-gradient(180deg,#1d2b64 0%,#6a4c93 38%,#f8a978 66%,#ffd6a5 100%)">
+  <svg viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0;width:100%;height:100%">
+    <circle cx="880" cy="400" r="110" fill="#fff4d6" opacity=".92"/>
+    <path d="M0 520 L220 360 L380 470 L560 300 L760 480 L980 340 L1280 520 L1280 720 L0 720Z" fill="#2c2a4a" opacity=".85"/>
+    <path d="M0 600 L180 500 L400 590 L640 470 L900 600 L1120 520 L1280 600 L1280 720 L0 720Z" fill="#171533"/>
+    <g fill="#ffb7c5" opacity=".9">
+      <circle cx="140" cy="120" r="7"/><circle cx="260" cy="210" r="5"/><circle cx="1080" cy="150" r="8"/>
+      <circle cx="1180" cy="260" r="5"/><circle cx="520" cy="90" r="6"/><circle cx="700" cy="180" r="4"/><circle cx="360" cy="320" r="5"/>
+    </g>
+  </svg>
+  <div class="tag">日本語を学ぼう · Lesson 12</div>
+  <iframe class="overlay" id="ov"></iframe>
+  <div class="player-bar"><span>▶</span><span>4:38 / 12:05</span><div class="track"><i></i><b></b></div><span>HD</span></div>
+</div>
+<script>
+document.getElementById('ov').src = '_gen/index.html?' + new URLSearchParams({ lines: JSON.stringify([
+  { lang: 'ja', orig: 'これから一緒に日本の文化について学びましょう。', text: 'Şimdi birlikte Japon kültürünü öğrenelim.' },
+  { lang: 'ja', orig: '今日はとても良い天気ですね。', text: 'Bugün hava gerçekten çok güzel, değil mi?' },
+]) });
+</script></body></html>

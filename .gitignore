@@ -1,0 +1,17 @@
+# Rust
+/app/target/
+/app/gen/
+# Çalışma zamanı: derlenmiş sunucular, modeller, günlükler
+/app/runtime/
+/runtime/
+/build-src/
+*.log
+# Görsel üretim ara dosyaları
+/tools/screenshots/_gen/
+# Test çıktıları
+/tests/click-through/clicks.log
+# Editör / işletim sistemi
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

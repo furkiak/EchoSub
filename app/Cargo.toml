@@ -1,0 +1,28 @@
+[package]
+name = "echosub"
+version = "0.1.0"
+description = "Hoparlör sesini canlı çeviren şeffaf altyazı aracı"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+cpal = "0.18"
+ureq = "2"
+rustfft = "6.4.1"
+ort = "2.0.0-rc.15"
+
+# GPU hızlandırma: Windows'ta DirectML (AMD/NVIDIA/Intel), macOS'ta CoreML.
+[target.'cfg(windows)'.dependencies]
+ort = { version = "2.0.0-rc.15", features = ["directml"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ort = { version = "2.0.0-rc.15", features = ["coreml"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
