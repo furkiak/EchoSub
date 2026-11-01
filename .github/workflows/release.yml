@@ -77,3 +77,4 @@ jobs:
         with:
           files: dist/echosub-*.*
           generate_release_notes: true
+          prerelease: true   # Linux/macOS paketleri henüz gerçek donanımda doğrulanmadı
