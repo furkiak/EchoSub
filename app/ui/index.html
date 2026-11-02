@@ -48,6 +48,8 @@
   }
   .line { width: 100%; word-wrap: break-word; overflow-wrap: anywhere; line-height: 1.22; }
   .line .orig { opacity: .75; font-size: .62em; font-weight: 400; }
+  .line .late { opacity: .8; font-size: .5em; font-weight: 400; margin-left: .6em; white-space: nowrap;
+    -webkit-text-stroke-width: var(--late-stroke, 0); }  /* küçük yazıda tam kalınlıkta kenar harfleri kapatır */
   #status {
     position: absolute; left: 10px; bottom: 6px; font: 12px "Segoe UI", sans-serif; color: #fff;
     background: rgba(20,20,28,.8); padding: 3px 9px; border-radius: 10px; opacity: 0;

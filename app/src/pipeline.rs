@@ -59,6 +59,22 @@ pub struct Caption {
     pub timing: String,
 }
 
+impl Caption {
+    /// Bu segmentin altyazısını ekrandan kaldırır.
+    fn cleared(seg_id: u64, is_final: bool) -> Self {
+        Caption {
+            seg_id,
+            is_final,
+            clear: true,
+            lang: String::new(),
+            original: String::new(),
+            translated: None,
+            latency_ms: 0,
+            timing: String::new(),
+        }
+    }
+}
+
 pub type EmitFn = Arc<dyn Fn(&Caption) + Send + Sync>;
 pub type LogFn = Arc<dyn Fn(&str) + Send + Sync>;
 
@@ -111,6 +127,12 @@ fn drop_oldest_finals<T>(q: &mut VecDeque<T>, is_final: impl Fn(&T) -> bool) {
     }
 }
 
+/// Sırası gelen iş atılmalı mı? En yeni iş (arkasında başka iş yok) hiç atılmaz: yavaş makinede
+/// her şey sınırı aşar ve ekranda hiç altyazı kalmazdı. Sınır 0 ise atılmaz.
+fn is_stale(age: Duration, limit_secs: f32, has_newer: bool) -> bool {
+    has_newer && limit_secs > 0.0 && age.as_secs_f32() > limit_secs
+}
+
 #[derive(Default)]
 struct TQueue {
     items: Mutex<VecDeque<TJob>>,
@@ -132,6 +154,14 @@ impl TQueue {
 
     fn has_final(&self) -> bool {
         self.items.lock().unwrap().iter().any(|j| j.is_final)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.items.lock().unwrap().is_empty()
+    }
+
+    fn clear(&self) {
+        self.items.lock().unwrap().clear();
     }
 
     fn pop(&self, stop: &AtomicBool) -> Option<TJob> {
@@ -167,6 +197,14 @@ impl Queue {
         self.cv.notify_one();
     }
 
+    fn is_empty(&self) -> bool {
+        self.items.lock().unwrap().is_empty()
+    }
+
+    fn clear(&self) {
+        self.items.lock().unwrap().clear();
+    }
+
     fn pop(&self, stop: &AtomicBool) -> Option<Job> {
         let mut q = self.items.lock().unwrap();
         loop {
@@ -187,6 +225,9 @@ pub struct Pipeline {
     pub llama_ready: Arc<AtomicBool>,
     /// Whisper sunucusu VAD modeliyle mi başlatıldı? Modelsiz sunucu `vad=true` isteklerini reddeder.
     pub vad_ready: Arc<AtomicBool>,
+    /// Altyazı gizliyken ses atılır, sunuculara istek gitmez (ekran kartı oyuna kalır).
+    /// Modeller bellekte kalır, böylece geri açmak anında olur.
+    pub paused: Arc<AtomicBool>,
     queue: Arc<Queue>,
     tqueue: Arc<TQueue>,
     /// Çeviri yavaşsa (büyük model / zayıf GPU) kısmi sonuçlar atlanır; GPU
@@ -201,9 +242,18 @@ impl Pipeline {
             whisper_ready: Arc::new(AtomicBool::new(false)),
             llama_ready: Arc::new(AtomicBool::new(false)),
             vad_ready: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
             queue: Arc::new(Queue::default()),
             tqueue: Arc::new(TQueue::default()),
             slow: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn set_paused(&self, paused: bool) {
+        self.paused.store(paused, Ordering::Relaxed);
+        if paused {
+            self.queue.clear();
+            self.tqueue.clear();
         }
     }
 
@@ -216,8 +266,8 @@ impl Pipeline {
         sep_model: PathBuf,
     ) {
         {
-            let (queue, stop) = (Arc::clone(&self.queue), Arc::clone(&self.stop));
-            std::thread::spawn(move || segmenter(shared, queue, stop));
+            let (queue, stop, paused) = (Arc::clone(&self.queue), Arc::clone(&self.stop), Arc::clone(&self.paused));
+            std::thread::spawn(move || segmenter(shared, queue, stop, paused));
         }
         {
             let queue = Arc::clone(&self.queue);
@@ -228,13 +278,15 @@ impl Pipeline {
             let vr = Arc::clone(&self.vad_ready);
             let (settings, emit, log) = (Arc::clone(&settings), Arc::clone(&emit), Arc::clone(&log));
             let slow = Arc::clone(&self.slow);
-            std::thread::spawn(move || worker(queue, tq, stop, settings, emit, log, wr, lr, vr, slow, sep_model));
+            let paused = Arc::clone(&self.paused);
+            std::thread::spawn(move || worker(queue, tq, stop, settings, emit, log, wr, lr, vr, slow, paused, sep_model));
         }
         let tq = Arc::clone(&self.tqueue);
         let stop = Arc::clone(&self.stop);
         let lr = Arc::clone(&self.llama_ready);
         let slow = Arc::clone(&self.slow);
-        std::thread::spawn(move || translator(tq, stop, settings, emit, log, lr, slow));
+        let paused = Arc::clone(&self.paused);
+        std::thread::spawn(move || translator(tq, stop, settings, emit, log, lr, slow, paused));
     }
 }
 
@@ -261,7 +313,7 @@ fn quietest_cut(seg: &[f32]) -> usize {
     best.1
 }
 
-fn segmenter(shared: Shared, queue: Arc<Queue>, stop: Arc<AtomicBool>) {
+fn segmenter(shared: Shared, queue: Arc<Queue>, stop: Arc<AtomicBool>, paused: Arc<AtomicBool>) {
     let mut local: Vec<f32> = Vec::new();
     let mut pre: VecDeque<f32> = VecDeque::new();
     let mut seg: Vec<f32> = Vec::new();
@@ -275,6 +327,14 @@ fn segmenter(shared: Shared, queue: Arc<Queue>, stop: Arc<AtomicBool>) {
 
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(30));
+        if paused.load(Ordering::Relaxed) {
+            shared.lock().unwrap().clear();
+            local.clear();
+            pre.clear();
+            seg.clear();
+            active = false;
+            continue;
+        }
         {
             let mut b = shared.lock().unwrap();
             local.append(&mut b);
@@ -424,6 +484,7 @@ fn worker(
     llama_ready: Arc<AtomicBool>,
     vad_ready: Arc<AtomicBool>,
     slow: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     sep_model: PathBuf,
 ) {
     // Vokal ayırıcı: ayar açıksa başlangıçta yüklenip ısıtılır, yoksa ilk ihtiyaçta.
@@ -462,7 +523,7 @@ fn worker(
     let mut whisper_slow = false;
 
     while let Some(job) = queue.pop(&stop) {
-        if !whisper_ready.load(Ordering::Relaxed) {
+        if !whisper_ready.load(Ordering::Relaxed) || paused.load(Ordering::Relaxed) {
             continue;
         }
         if !job.is_final && (whisper_slow || (slow.load(Ordering::Relaxed) && llama_ready.load(Ordering::Relaxed))) {
@@ -481,16 +542,13 @@ fn worker(
         let q_ms = job.created.elapsed().as_millis() as u64;
         let mut s = settings.lock().unwrap().clone();
         s.use_vad = s.use_vad && vad_ready.load(Ordering::Relaxed);
-        let clear = |lang: &str| Caption {
-            seg_id: job.seg_id,
-            is_final: job.is_final,
-            clear: true,
-            lang: lang.to_string(),
-            original: String::new(),
-            translated: None,
-            latency_ms: 0,
-            timing: String::new(),
-        };
+        if is_stale(job.created.elapsed(), s.max_caption_age_secs, !queue.is_empty()) {
+            if job.is_final {
+                log(&format!("bayat parça atıldı #{} ({q_ms} ms)", job.seg_id));
+                emit(&Caption::cleared(job.seg_id, true));
+            }
+            continue;
+        }
 
         let t_w = Instant::now();
         let reused = reusable_partial(&last_partial, &job);
@@ -565,12 +623,12 @@ fn worker(
 
         if is_junk(&text) || no_speech > 0.7 {
             if job.is_final {
-                emit(&clear(""));
+                emit(&Caption::cleared(job.seg_id, true));
             }
             continue;
         }
         if job.is_final && text == last_final && last_final_at.elapsed() < Duration::from_secs(10) {
-            emit(&clear(""));
+            emit(&Caption::cleared(job.seg_id, true));
             continue;
         }
         let code = langs::code_from_name(&language);
@@ -619,16 +677,27 @@ fn translator(
     log: LogFn,
     llama_ready: Arc<AtomicBool>,
     slow: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
 ) {
     let mut cache: VecDeque<(String, String, String, String)> = VecDeque::new(); // metin, kaynak, hedef, çeviri
     let mut ema_ms = 0.0f64; // ölçülen çeviri süresinin üstel ortalaması
 
     while let Some(j) = tq.pop(&stop) {
         // Arkasında final bekliyorsa bu kısmi sonuç bayat; çevirmeye değmez.
-        if !j.is_final && tq.has_final() {
+        if paused.load(Ordering::Relaxed) || (!j.is_final && tq.has_final()) {
             continue;
         }
-        let dst = settings.lock().unwrap().target_lang.clone();
+        let (dst, max_age) = {
+            let s = settings.lock().unwrap();
+            (s.target_lang.clone(), s.max_caption_age_secs)
+        };
+        if is_stale(j.created.elapsed(), max_age, !tq.is_empty()) {
+            if j.is_final {
+                log(&format!("bayat çeviri atıldı #{} ({} ms)", j.seg_id, j.created.elapsed().as_millis()));
+                emit(&Caption::cleared(j.seg_id, true));
+            }
+            continue;
+        }
         let mut translated = None;
         let t0 = Instant::now();
         if j.code != dst && llama_ready.load(Ordering::Relaxed) {
@@ -1031,6 +1100,71 @@ mod tests {
         }
         let ids: Vec<u64> = q.items.lock().unwrap().iter().map(|j| j.seg_id).collect();
         assert_eq!(ids, (3..=(MAX_PENDING_FINALS as u64 + 2)).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn only_old_jobs_with_a_newer_one_behind_them_are_stale() {
+        let s = Duration::from_secs;
+        assert!(is_stale(s(20), 15.0, true));
+        assert!(!is_stale(s(20), 15.0, false), "en yeni iş kalır");
+        assert!(!is_stale(s(10), 15.0, true));
+        assert!(!is_stale(s(999), 0.0, true), "0 = kapalı");
+    }
+
+    /// Çeviri modeli yokken (llama_ready = false) çeviri ipliğini sırayı boşaltana kadar çalıştırır.
+    fn run_translator(max_age: f32, paused: bool, jobs: Vec<TJob>) -> Vec<(u64, bool)> {
+        let tq = Arc::new(TQueue::default());
+        for j in jobs {
+            tq.push(j);
+        }
+        let out = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&out);
+        let emit: EmitFn = Arc::new(move |c: &Caption| sink.lock().unwrap().push((c.seg_id, c.clear)));
+        let log: LogFn = Arc::new(|_| {});
+        let s = Settings { max_caption_age_secs: max_age, ..Settings::default() };
+        let flag = |v| Arc::new(AtomicBool::new(v));
+        translator(tq, flag(true), Arc::new(Mutex::new(s)), emit, log, flag(false), flag(false), flag(paused));
+        let r = out.lock().unwrap().clone();
+        r
+    }
+
+    fn old_final(id: u64) -> TJob {
+        TJob {
+            seg_id: id, is_final: true, created: Instant::now() - Duration::from_secs(20),
+            text: "x".into(), code: "en", q_ms: 0, w_ms: 0, lp: 0.0,
+        }
+    }
+
+    #[test]
+    fn translator_removes_stale_captions_but_shows_the_newest() {
+        let got = run_translator(15.0, false, vec![old_final(1), old_final(2), old_final(3)]);
+        assert_eq!(got, vec![(1, true), (2, true), (3, false)]);
+    }
+
+    #[test]
+    fn translator_keeps_everything_when_the_age_limit_is_off() {
+        let got = run_translator(0.0, false, vec![old_final(1), old_final(2)]);
+        assert_eq!(got, vec![(1, false), (2, false)]);
+    }
+
+    #[test]
+    fn translator_shows_nothing_while_paused() {
+        assert!(run_translator(15.0, true, vec![old_final(1)]).is_empty());
+    }
+
+    #[test]
+    fn pausing_forgets_waiting_jobs() {
+        let p = Pipeline::new();
+        p.queue.push(job(1, true));
+        p.tqueue.push(TJob {
+            seg_id: 1, is_final: true, created: Instant::now(), text: "x".into(),
+            code: "en", q_ms: 0, w_ms: 0, lp: 0.0,
+        });
+        p.set_paused(false);
+        assert!(!p.queue.is_empty() && !p.tqueue.is_empty(), "devam etmek işleri silmez");
+        p.set_paused(true);
+        assert!(p.queue.is_empty() && p.tqueue.is_empty());
+        assert!(p.paused.load(Ordering::Relaxed));
     }
 
     #[test]

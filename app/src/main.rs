@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_global_shortcut::{GlobalShortcut, Shortcut, ShortcutState};
 
 #[derive(Serialize, Clone, Default)]
 struct Status {
@@ -38,6 +39,8 @@ struct App {
     dl_cancel: AtomicBool,
     /// İndirme penceresini hangi eksik model kümesi için en son açtık (aynı küme için tekrar açma).
     asked: Mutex<Vec<String>>,
+    /// Kısayol sorunu: boot "Hazır" yerine bunu gösterir.
+    hotkey_error: Mutex<Option<String>>,
 }
 
 /// Aynı anda tek kopya: görev çubuğunda görünmediği için kullanıcı kolayca iki kez başlatabilir.
@@ -196,7 +199,10 @@ fn boot(app: AppHandle) {
                         return;
                     }
                     st.pipeline.llama_ready.store(true, Ordering::Relaxed);
-                    set_status(&app, "ready", "Hazır");
+                    match st.hotkey_error.lock().unwrap().clone() {
+                        Some(e) => set_status(&app, "warn", &e),
+                        None => set_status(&app, "ready", "Hazır"),
+                    }
                 }
                 sidecar::Wait::Died => {
                     set_status(&app, "warn", LLAMA_CRASHED);
@@ -241,6 +247,66 @@ fn spawn_server_watchdog(app: AppHandle) {
     });
 }
 
+/// `win.show()` Windows'ta pencereyi etkinleştirir: oyun tam o anda klavyeyi kaybederdi.
+#[cfg(windows)]
+fn show_overlay_window(win: &tauri::WebviewWindow, shown: bool) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOWNOACTIVATE};
+    if let Ok(h) = win.hwnd() {
+        unsafe { ShowWindow(h.0 as _, if shown { SW_SHOWNOACTIVATE } else { SW_HIDE }) };
+    }
+}
+
+#[cfg(not(windows))]
+fn show_overlay_window(win: &tauri::WebviewWindow, shown: bool) {
+    let _ = if shown { win.show() } else { win.hide() };
+}
+
+/// Altyazıyı gizler (ses işlemeyi de durdurur) ya da geri getirir.
+fn set_overlay_paused(app: &AppHandle, paused: bool) {
+    let st = app.state::<App>();
+    if st.pipeline.paused.load(Ordering::Relaxed) == paused {
+        return;
+    }
+    st.pipeline.set_paused(paused);
+    let _ = app.emit_to("main", "paused", paused);
+    if let Some(win) = app.get_webview_window("main") {
+        show_overlay_window(&win, !paused);
+    }
+    log_line(&st.paths, if paused { "altyazı gizlendi, ses işleme durdu" } else { "altyazı geri geldi" });
+}
+
+fn register_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
+    let Some(gs) = app.try_state::<GlobalShortcut<tauri::Wry>>() else {
+        return Err("Kısayol bu sistemde kullanılamıyor".into());
+    };
+    let _ = gs.unregister_all();
+    if hotkey.is_empty() {
+        return Ok(());
+    }
+    let sc: Shortcut = hotkey.parse().map_err(|_| format!("Geçersiz kısayol: {hotkey}"))?;
+    gs.register(sc).map_err(|_| format!("{hotkey} kısayolu başka bir programda kullanılıyor"))?;
+    // Kayıt başarılı görünür ama kütüphane yalnızca X11'i destekler.
+    if std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland") {
+        return Err("Wayland'da kısayol çalışmayabilir".into());
+    }
+    Ok(())
+}
+
+/// Kısayolu kaydeder; sorun varsa saklar ki boot da gösterebilsin. Önceki sorun çözüldüyse uyarısını kaldırır.
+fn apply_hotkey(app: &AppHandle, hotkey: &str) -> Option<String> {
+    let st = app.state::<App>();
+    let err = register_hotkey(app, hotkey).err();
+    if let Some(e) = &err {
+        log_line(&st.paths, &format!("kısayol: {e}"));
+    }
+    let old = std::mem::replace(&mut *st.hotkey_error.lock().unwrap(), err.clone());
+    let cur = st.status.lock().unwrap().clone();
+    if err.is_none() && old.is_some_and(|o| cur.stage == "warn" && cur.msg == o) {
+        set_status(app, "ready", "Hazır");
+    }
+    err
+}
+
 /// Altyazı penceresi için imleç izleyici (~25 Hz).
 ///
 /// - `hover` olayı: imleç pencerenin üstündeyken arayüz şeridini/çerçevesini göstermek için.
@@ -262,6 +328,9 @@ fn spawn_hover_watcher(app: AppHandle) {
         let mut last_geom = (0i32, 0i32, 0u32, 0u32);
         loop {
             std::thread::sleep(Duration::from_millis(40));
+            if app.state::<App>().pipeline.paused.load(Ordering::Relaxed) {
+                continue;
+            }
             let Some(win) = app.get_webview_window("main") else { continue };
             let click_through = app.state::<App>().settings.lock().unwrap().click_through;
             let (Ok(cur), Ok(pos), Ok(size), Ok(scale)) =
@@ -344,13 +413,21 @@ fn languages() -> Vec<(String, String)> {
 
 #[tauri::command]
 fn set_settings(app: AppHandle, state: State<App>, new: Settings) {
-    let (restart, separation_changed) = {
+    let (restart, separation_changed, hotkey_changed) = {
         let mut cur = state.settings.lock().unwrap();
-        let r = (cur.needs_restart(&new), cur.use_separation != new.use_separation);
+        let r = (cur.needs_restart(&new), cur.use_separation != new.use_separation, cur.hotkey != new.hotkey);
         *cur = new.clone();
         r
     };
     new.save(&state.settings_path);
+    if hotkey_changed {
+        let (h, hotkey) = (app.clone(), new.hotkey.clone());
+        std::thread::spawn(move || {
+            if let Some(e) = apply_hotkey(&h, &hotkey) {
+                set_status(&h, "warn", &e);
+            }
+        });
+    }
     let _ = app.emit("settings", new);
     let h = app.clone();
     if restart {
@@ -532,10 +609,12 @@ fn main() {
         return;
     }
     // Kapanana kadar tutulur.
-    let _instance = match std::net::TcpListener::bind(("127.0.0.1", INSTANCE_PORT)) {
+    let instance = match std::net::TcpListener::bind(("127.0.0.1", INSTANCE_PORT)) {
         Ok(l) => l,
         Err(_) => {
             log_line(&Paths::resolve(), "EchoSub zaten açık; ikinci kopya kapatıldı");
+            // Altyazı kısayolla gizlenmiş olabilir: açık olan kopya bu bağlantıyla geri getirir.
+            let _ = std::net::TcpStream::connect(("127.0.0.1", INSTANCE_PORT));
             return;
         }
     };
@@ -546,7 +625,7 @@ fn main() {
             get_settings, set_settings, get_status, languages, open_settings, quit,
             open_models, model_list, download_models, cancel_download
         ])
-        .setup(|app| {
+        .setup(move |app| {
             let handle = app.handle().clone();
             let paths = Paths::resolve();
             rotate_log(&paths);
@@ -565,6 +644,7 @@ fn main() {
                 dl_active: AtomicBool::new(false),
                 dl_cancel: AtomicBool::new(false),
                 asked: Mutex::new(Vec::new()),
+                hotkey_error: Mutex::new(None),
             });
             log_line(&paths, &format!("başlatıldı, home={}", paths.home.display()));
 
@@ -611,6 +691,28 @@ fn main() {
                 let _ = emit_handle.emit("caption", c);
             });
             st.pipeline.start(shared, settings, emit, log, paths.model("UVR-MDX-NET-Voc_FT.onnx"));
+
+            let plugin = tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _, ev| {
+                    if ev.state() == ShortcutState::Pressed {
+                        let paused = app.state::<App>().pipeline.paused.load(Ordering::Relaxed);
+                        set_overlay_paused(app, !paused);
+                    }
+                })
+                .build();
+            if let Err(e) = handle.plugin(plugin) {
+                log_line(&paths, &format!("kısayol eklentisi başlamadı: {e}"));
+            }
+            let hotkey = st.settings.lock().unwrap().hotkey.clone();
+            apply_hotkey(&handle, &hotkey);
+            {
+                let h = handle.clone();
+                std::thread::spawn(move || {
+                    for _ in instance.incoming() {
+                        set_overlay_paused(&h, false);
+                    }
+                });
+            }
 
             spawn_hover_watcher(handle.clone());
             spawn_server_watchdog(handle.clone());

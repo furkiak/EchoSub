@@ -33,6 +33,7 @@ ekran kartında (ya da işlemcide) yerel olarak çalışır.
 - **Müzikte de çalışır.** Bir parça okunamıyorsa EchoSub vokali enstrümandan ayırıp yeniden dener (isteğe bağlı, yalnızca o parçalarda).
 - **Her ekran kartı.** Vulkan sayesinde AMD, NVIDIA ve Intel aynı davranır. Apple Silicon'da Metal kullanılır. Kart yoksa işlemciye düşer, gecikme artar.
 - **Pencere değil, altyazı katmanı gibi davranır.** Şeffaf, her zaman üstte, sürüklenir, boyutlanır ve yazı pencereyle birlikte büyür/küçülür. Altyazı alanındaki tıklamalar alttaki uygulamaya geçer.
+- **Gerektiğinde çekilir.** Global kısayol altyazıyı gizler ve arkasındaki işi durdurur, böylece oyun ekran kartını geri alır. Tekrar basınca altyazı anında döner.
 - **Sen biçimlendirirsin.** Yazı tipi, boyut, renkler, kenar, arka plan, satır sayısı ve kaybolma süresi. Önizleme canlıdır.
 - **60'tan fazla dil** tanınır ve hedef olarak seçilebilir; otomatik algılanır ya da sabitlenir. Çeviri kalitesi dil çiftine göre değişir.
 
@@ -107,7 +108,7 @@ Her kartı test edemeyiz. Kartın sorun çıkarırsa iki günlük dosyası ve `v
 
 Komut satırını tercih edersen ya da internetsiz bir bilgisayarı hazırlayacaksan: `scripts/download-models.ps1 -Quality balanced` (`fast` | `balanced` | `quality`) aynı dosyaları `runtime/models` içine koyar. Kalite ayarını sonradan değiştirince yeni modeller eksikse indirme penceresi yine açılır; *Ayarlar → Modelleri indir / denetle* ile de istediğin an açabilirsin.
 
-EchoSub'ın görev çubuğu simgesi yoktur: ekranın altındaki şeffaf şerittir. Ayarlar ve kapatma için üzerine gel. Zaten açıkken ikinci kez başlatmak bir şey yapmaz.
+EchoSub'ın görev çubuğu simgesi yoktur: ekranın altındaki şeffaf şerittir. Ayarlar ve kapatma için üzerine gel. İkinci kez başlatmak kısayolla gizlediğin altyazıyı geri getirir; ikinci bir kopya çalışmaz.
 
 ### Linux / macOS (hazır sürüm)
 
@@ -138,14 +139,17 @@ Windows'ta `scripts\build-sidecars.ps1` betiğini *x64 Native Tools* kabuğundan
 | Şeridi sürükle | Katmanı taşı |
 | Kenar ya da köşeyi sürükle | Boyutlandır; yazı sığacak şekilde yeniden ölçeklenir |
 | Altyazı metnine tıkla | Tıklama alttaki pencereye gider (Ayarlar'dan kapatılabilir) |
+| Herhangi bir yerde `Ctrl+Shift+F11` tuşlarına bas | Altyazıyı gizle ya da göster (tuş Ayarlar'dan değiştirilebilir) |
+
+Gizliyken EchoSub sesi yok sayar ve ekran kartına iş göndermez. Modeller bellekte kalır, yani VRAM boşalmaz ama altyazı anında geri gelir. Windows'ta geri açmak, oynadığın oyunun klavye odağını almaz.
 
 ### Ayarlar
 
 | Grup | Seçenekler |
 |---|---|
 | **Dil** | Çeviri dili, konuşulan dil (otomatik ya da sabit), çevirinin altında özgün metni göster |
-| **Performans** | Kalite ön ayarı (*hızlı* / *dengeli* / *kaliteli*), VAD müzik/gürültü filtresi, vokal ayırma yedeği |
-| **Görünüm** | Tıklama geçirme, yazı tipi, otomatik sığdırma ya da sabit boyut, kalın, yazı/kenar/arka plan renkleri, kenar kalınlığı, arka plan opaklığı, satır sayısı, kaybolma süresi |
+| **Performans** | Kalite ön ayarı (*hızlı* / *dengeli* / *kaliteli*), VAD müzik/gürültü filtresi, vokal ayırma yedeği, en eski altyazı süresi |
+| **Görünüm** | Tıklama geçirme, göster/gizle kısayolu, yazı tipi, otomatik sığdırma ya da sabit boyut, kalın, yazı/kenar/arka plan renkleri, kenar kalınlığı, arka plan opaklığı, satır sayısı, kaybolma süresi |
 
 Ayarlar, işletim sisteminin yapılandırma klasöründeki `settings.json` dosyasında saklanır (Windows'ta
 `%APPDATA%\com.echosub.app`, Linux'ta `~/.config/com.echosub.app`, macOS'ta `~/Library/Application Support/com.echosub.app`).
@@ -172,7 +176,7 @@ Günlükler `runtime/logs` klasörüne yazılır. Uygulamanın duyduğu ve çevi
 
 Gecikme ekran kartına bağlıdır; yavaş kartlarda *hızlı* mod önerilir. Şarkılarda altyazı yalnızca son parçalarda görünür, canlı kısmi altyazı yoktur.
 
-Ekran kartı olmadan (i9-14900K'nın 8 çekirdeği, Linux): *hızlı* cümle başına yaklaşık 5-10 sn, *dengeli* 25 sn'nin üstünde sürer; bu, kesintisiz konuşmaya yetişemez. *Hızlı* ayarı kullan. Makine geride kalınca kısmi altyazılar atlanır ve sırada yalnızca en yeni üç cümle bekler; yani altyazı giderek geriye düşmek yerine cümle atlayabilir.
+Ekran kartı olmadan (i9-14900K'nın 8 çekirdeği, Linux): *hızlı* cümle başına yaklaşık 5-10 sn, *dengeli* 25 sn'nin üstünde sürer; bu, kesintisiz konuşmaya yetişemez. *Hızlı* ayarı kullan. Makine geride kalınca kısmi altyazılar atlanır ve sırada yalnızca en yeni üç cümle bekler. 15 sn'den uzun bekleyen cümle atılır ama en yenisi her zaman kalır; yani altyazı giderek geriye düşmek yerine cümle atlar. Yine de 5 sn ya da daha geç gelen altyazıda gecikme yazılır (`+12 sn`). Hiç cümle kaçırmak istemiyorsan Ayarlar'da *En eski altyazı* değerini 0 yap.
 
 ## Durum
 
@@ -187,6 +191,8 @@ Bilinen sınırlamalar:
 - Konuşma yanlış duyulursa çeviri de yanlış olur; çok kısa kayıtlarda dil algılama güvenilir değildir.
 - Arayüz şu an Türkçe; çeviri hedefi desteklenen herhangi bir dil olabilir.
 - Henüz kurulum paketi yok (yalnızca taşınabilir arşiv).
+- Altyazı, pencereli ve kenarlıksız oyunların üstünde çalışacak şekilde tasarlandı. Özel tam ekran (exclusive fullscreen) büyük ihtimalle altyazıyı gizler, çünkü her zaman üstte olan bir pencere normalde onun üstüne çizemez. Oyunlarda henüz denenmedi.
+- Global kısayol Linux'ta X11 gerektirir. Wayland'de çalışmayabilir; EchoSub bunu açılışta söyler.
 
 ## Sorun giderme
 
@@ -194,6 +200,8 @@ Bilinen sınırlamalar:
 - **"Konuşma sunucusu çöktü":** `runtime/logs/whisper.log` dosyasının son satırlarına bak. Ekran kartı sürücüsünü güncelle; hazır paketler AVX2'siz işlemcileri desteklemez.
 - **"… portu başka bir program tarafından kullanılıyor":** 18080 ya da 18081 portunu başka bir program tutuyor; çoğunlukla Linux veya macOS'ta bir çökmeden kalan sunucudur. Onu kapatıp EchoSub'ı yeniden başlat.
 - **Hiç altyazı yok:** Varsayılan çıkış aygıtında gerçekten ses çaldığından ve durum mesajının "hazır" dediğinden emin ol. Günlükler: `runtime/logs/app.log` ve `whisper.log`.
+- **"… kısayolu başka bir programda kullanılıyor":** O tuşu başka bir program tutuyor. Ayarlar'dan başka bir tuş seç.
+- **Altyazı kayboldu, üzerine gelince de bir şey çıkmıyor:** Gizlenmiş olabilir. Kısayola bas ya da EchoSub'ı yeniden başlat.
 - **Kaliteli modda altyazı geriden geliyor:** *Dengeli* ya da *hızlı* moda geç ya da vokal ayırma yedeğini kapat.
 - **Linux'ta tıklamalar geçmiyor:** Bazı Wayland ortamlarında beklenen durum; [Durum](#durum) bölümüne bak.
 - **Üzerine gelme bölgelerini ayıklamak için:** `ECHOSUB_DEBUG_HOVER=1` ortam değişkeniyle başlat.

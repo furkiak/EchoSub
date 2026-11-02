@@ -1,4 +1,4 @@
-# docs/images/logo.png -> app/icons/icon.png + icon.ico (PNG katmanlı çok boyutlu ICO)
+﻿# docs/images/logo.png -> app/icons/icon.png + icon.ico (PNG katmanlı çok boyutlu ICO)
 Add-Type -AssemblyName System.Drawing
 $root = (Resolve-Path "$PSScriptRoot\..\..").Path
 $src = [System.Drawing.Image]::FromFile("$root\docs\images\logo.png")

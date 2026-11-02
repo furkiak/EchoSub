@@ -1,4 +1,4 @@
-# Test penceresi: üstüne gelen tıklamaları dosyaya yazar. Overlay'in ALTINA yerleştirilir.
+﻿# Test penceresi: üstüne gelen tıklamaları dosyaya yazar. Overlay'in ALTINA yerleştirilir.
 param([int]$X, [int]$Y, [int]$W, [int]$H, [string]$Log)
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type -Name D -Namespace W -MemberDefinition '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetProcessDPIAware();'

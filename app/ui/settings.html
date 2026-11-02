@@ -50,12 +50,16 @@
   <div class="row"><label for="use_separation">Anlaşılmayan seslerde vokal ayır</label><div class="ctl"><input type="checkbox" id="use_separation"></div></div>
   <p class="hint">Şarkı/müzik gibi okunamayan parçalarda sesi enstrümandan ayırıp yeniden dener. Yalnızca o parçalarda gecikmeyi artırır.</p>
   <p class="hint">Kalite veya filtre değişince modeller yeniden yüklenir. Eksik modeller için indirme penceresi açılır.</p>
+  <div class="row"><label for="max_caption_age_secs">En eski altyazı (sn)</label><div class="ctl"><input type="number" id="max_caption_age_secs" min="0" max="300" step="1" style="max-width:80px"></div></div>
+  <p class="hint">Makine yetişemezse sırada bundan uzun bekleyen cümleler atlanır, en yenisi gösterilir. Hiç cümle kaçırmamak için 0 yap.</p>
   <div class="row"><label>Model dosyaları</label><div class="ctl"><button type="button" id="open_models">Modelleri indir / denetle</button></div></div>
 </fieldset>
 
 <fieldset><legend>Görünüm</legend>
   <div class="row"><label for="click_through">Altyazı alanından tıklama geçir</label><div class="ctl"><input type="checkbox" id="click_through"></div></div>
   <p class="hint">Açıkken altyazının üstündeki tıklamalar alttaki pencereye gider. Sürüklemek için üzerine gelince çıkan üst şeridi, boyutlandırmak için kenarları kullan.</p>
+  <div class="row"><label for="hotkey">Göster / gizle kısayolu</label><div class="ctl"><input type="text" id="hotkey" readonly style="max-width:170px;cursor:pointer"></div></div>
+  <p class="hint">Değiştirmek için alana tıklayıp tuşlara bas, kapatmak için Delete. Gizliyken çeviri durur ve ekran kartı başka işlere kalır; modeller bellekte durur. EchoSub'ı yeniden çalıştırmak da altyazıyı geri getirir.</p>
   <div class="row"><label for="font_family">Yazı tipi</label><div class="ctl"><input type="text" id="font_family" list="fonts"></div></div>
   <datalist id="fonts">
     <option value="Segoe UI, Arial, sans-serif"><option value="Arial, sans-serif"><option value="Verdana, sans-serif">

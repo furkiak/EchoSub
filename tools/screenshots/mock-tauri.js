@@ -8,7 +8,7 @@
     font_family: 'Segoe UI, Arial, sans-serif', font_scale: 1, auto_fit: true, bold: true,
     text_color: '#ffffff', outline_color: '#000000', outline_width: 3, bg_color: '#000000',
     bg_opacity: 0, lines: 2, show_original: q.get('orig') === '1', hide_after_secs: 3600,
-    use_vad: true, use_separation: true, click_through: true,
+    use_vad: true, use_separation: true, click_through: true, max_caption_age_secs: 15, hotkey: 'Ctrl+Shift+F11',
   }, q.get('settings') ? JSON.parse(q.get('settings')) : {});
   const langs = [['en','English'],['ja','Japanese'],['ru','Russian'],['de','German'],['es','Spanish'],
                  ['fr','French'],['ko','Korean'],['tr','Turkish'],['ar','Arabic'],['zh','Chinese']];
@@ -24,6 +24,6 @@
     const lines = JSON.parse(q.get('lines') || '[]');
     lines.forEach((l, i) => handlers.caption && handlers.caption({ payload: {
       seg_id: i + 1, final: true, clear: false, lang: l.lang || 'ja',
-      original: l.orig || '', translated: l.text, latency_ms: 220 } }));
+      original: l.orig || '', translated: l.text, latency_ms: l.late || 220 } }));
   }, 80));
 })();

@@ -33,6 +33,7 @@ choose. It does this with a Japanese lesson on YouTube, a Russian song, a livest
 - **Works on music.** When a segment cannot be read, EchoSub separates the vocals from the instruments and tries again (optional, only for those segments).
 - **Any GPU.** Vulkan means AMD, NVIDIA and Intel cards behave the same. Apple Silicon uses Metal. No GPU? It falls back to the CPU, with higher latency.
 - **Behaves like a subtitle layer, not a window.** Transparent, always on top, draggable, resizable, and the text grows and shrinks with the window. Clicks on the caption area pass through to the app underneath.
+- **Gets out of the way.** A global hotkey hides the captions and stops the work behind them, so a game gets the GPU back. Press it again and they return instantly.
 - **Yours to style.** Font, size, colors, outline, background, number of lines, how long captions stay. Preview is live.
 - **60+ languages** recognised and selectable as the target, auto-detected or fixed. Translation quality varies by language pair.
 
@@ -107,7 +108,7 @@ We cannot test every card. If yours misbehaves, please open an issue with the tw
 
 Prefer the command line, or want to prepare an offline machine? `scripts/download-models.ps1 -Quality balanced` (`fast` | `balanced` | `quality`) puts the same files into `runtime/models`. Switching the quality preset later opens the download window again if the new models are missing, and *Settings → Modelleri indir / denetle* (download / check models) reopens it any time.
 
-EchoSub has no taskbar icon: it is the transparent strip at the bottom of the screen. Hover over it to reach settings and close. Starting it a second time does nothing while it is already running.
+EchoSub has no taskbar icon: it is the transparent strip at the bottom of the screen. Hover over it to reach settings and close. Starting it a second time brings back captions you hid with the hotkey; no second copy runs.
 
 ### Linux / macOS (release build)
 
@@ -138,14 +139,17 @@ On Windows use `scripts\build-sidecars.ps1` from an *x64 Native Tools* prompt (V
 | Drag the strip | Move the overlay |
 | Drag an edge or corner | Resize; text rescales to fit |
 | Click on the caption text | The click goes to the window underneath (can be turned off in Settings) |
+| Press `Ctrl+Shift+F11` from anywhere | Hide or show the captions (the key can be changed in Settings) |
+
+While hidden, EchoSub ignores the audio and sends nothing to the GPU. The models stay in memory, so VRAM is not freed, but captions return instantly. On Windows, showing them again does not take keyboard focus from the game you are playing.
 
 ### Settings
 
 | Group | Options |
 |---|---|
 | **Language** | Target language, spoken language (auto-detect or fixed), show original text under the translation |
-| **Performance** | Quality preset (*fast* / *balanced* / *quality*), VAD music/noise filter, vocal-separation fallback |
-| **Appearance** | Click-through, font family, auto-fit or fixed size, bold, text / outline / background colors, outline width, background opacity, line count, hide delay |
+| **Performance** | Quality preset (*fast* / *balanced* / *quality*), VAD music/noise filter, vocal-separation fallback, oldest caption age |
+| **Appearance** | Click-through, show/hide hotkey, font family, auto-fit or fixed size, bold, text / outline / background colors, outline width, background opacity, line count, hide delay |
 
 Settings are stored in `settings.json` in the OS config folder (`%APPDATA%\com.echosub.app` on Windows,
 `~/.config/com.echosub.app` on Linux, `~/Library/Application Support/com.echosub.app` on macOS).
@@ -172,7 +176,7 @@ Measured with *balanced* mode on a Radeon RX 9070 XT (Vulkan), Windows 11:
 
 Latency depends on your GPU; slower cards should use *fast*. Songs show captions on final segments only, not as live partials.
 
-Without a GPU (8 cores of an i9-14900K, Linux): *fast* takes about 5 to 10 s per sentence, *balanced* over 25 s, which cannot keep up with continuous speech. Use *fast*. When the machine falls behind, partial captions are skipped and only the newest three sentences wait in line, so captions may skip sentences instead of lagging further and further.
+Without a GPU (8 cores of an i9-14900K, Linux): *fast* takes about 5 to 10 s per sentence, *balanced* over 25 s, which cannot keep up with continuous speech. Use *fast*. When the machine falls behind, partial captions are skipped and only the newest three sentences wait in line. A sentence that has waited more than 15 s is dropped, but the newest one always stays, so captions skip sentences instead of lagging further and further. A caption that still arrives 5 s or more late shows its delay (`+12 sn`). Set *Oldest caption* to 0 in Settings if you would rather keep every sentence.
 
 ## Status
 
@@ -187,6 +191,8 @@ Known limitations:
 - Mistranslation when the speech is misheard, and unreliable language detection on very short clips.
 - The overlay UI is currently in Turkish; the translation target can be any supported language.
 - No installer yet (portable archive only).
+- Captions are meant to work over windowed and borderless games. Exclusive fullscreen will probably hide them, because an always-on-top window normally cannot draw over it. Games have not been tested yet.
+- The global hotkey needs X11 on Linux. On Wayland it may not work, and EchoSub says so when it starts.
 
 ## Troubleshooting
 
@@ -194,6 +200,8 @@ Known limitations:
 - **"Konuşma sunucusu çöktü" / speech server crashed:** see the last lines of `runtime/logs/whisper.log`. Update the graphics driver; a CPU without AVX2 is not supported by the release packages.
 - **"… portu başka bir program tarafından kullanılıyor" / port in use:** another program holds port 18080 or 18081, often a server left over after a crash on Linux or macOS. Close it and start EchoSub again.
 - **No captions at all:** check that something is actually playing on the default output device and that the status message says it is ready. Logs: `runtime/logs/app.log` and `whisper.log`.
+- **"… kısayolu başka bir programda kullanılıyor" / hotkey in use:** another program holds that key. Choose a different one in Settings.
+- **Captions vanished and hovering shows nothing:** they may be hidden. Press the hotkey or start EchoSub again.
 - **Captions lag with the *quality* preset:** switch to *balanced* or *fast*, or turn off the vocal-separation fallback.
 - **Clicks do not pass through on Linux:** expected on some Wayland compositors; see [Status](#status).
 - **Debug the hover zones:** start with the environment variable `ECHOSUB_DEBUG_HOVER=1`.

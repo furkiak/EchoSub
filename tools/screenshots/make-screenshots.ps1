@@ -1,4 +1,4 @@
-# Dokümantasyon görsellerini üretir (docs/images). Gerekli: Windows + Microsoft Edge.
+﻿# Dokümantasyon görsellerini üretir (docs/images). Gerekli: Windows + Microsoft Edge.
 # Kullanım: tools\screenshots\make-screenshots.ps1
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path "$PSScriptRoot\..\..").Path
@@ -36,7 +36,7 @@ Shot (FileUrl "$here\scene-ru.html") "$out\overlay-ru.png" 1280 720
 Shot (FileUrl "$here\scene-hover.html") "$out\overlay-hover.png" 1280 720
 
 # 3) Ayarlar penceresi (gerçek settings.html)
-Shot ((FileUrl "$gen\settings.html") + '?settings=%7B%22hide_after_secs%22%3A6%7D') "$out\settings.png" 520 1030
+Shot ((FileUrl "$gen\settings.html") + '?settings=%7B%22hide_after_secs%22%3A6%7D') "$out\settings.png" 520 1250
 
 # 4) Banner ve mimari şema
 Shot (FileUrl "$here\banner.html") "$out\banner.png" 1280 640

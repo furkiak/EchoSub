@@ -10,6 +10,8 @@
   let entries = [];        // {seg, text, orig, final, ts}
   let doneSeg = 0;         // final'i gelmiş en büyük parça numarası
   let statusTimer = null;
+  let resumedAt = -Infinity; // gizlendikten sonra geri açılma anı
+  const LATE_MS = 5000;    // bundan geç gelen altyazıda gecikme yazılır
 
   // ---------------------------------------------------------------- stil
   function applyStyle() {
@@ -32,6 +34,7 @@
       caps.style.webkitTextStroke = '0';
       caps.style.textShadow = 'none';
     }
+    caps.style.setProperty('--late-stroke', w > 0 ? Math.min(w, 2) + 'px' : '0');
     fit();
   }
 
@@ -62,6 +65,12 @@
       const d = document.createElement('div');
       d.className = 'line';
       d.textContent = e.text;
+      if (e.late) {
+        const l = document.createElement('span');
+        l.className = 'late';
+        l.textContent = `+${e.late} sn`;
+        d.appendChild(l);
+      }
       if (S && S.show_original && e.orig && e.orig !== e.text) {
         const o = document.createElement('div');
         o.className = 'orig';
@@ -74,6 +83,8 @@
   }
 
   function onCaption(c) {
+    // Gizlenmeden önce başlamış iş, geri açıldıktan sonra bitti: artık bayat.
+    if (c.latency_ms > performance.now() - resumedAt) return;
     // Kısmi çeviri, aynı parçanın final'inden (ya da silinmesinden) sonra gelebilir: yok say.
     if (!c.final && c.seg_id <= doneSeg) return;
     if (c.final) doneSeg = Math.max(doneSeg, c.seg_id);
@@ -84,7 +95,8 @@
       return;
     }
     const text = c.translated || c.original;
-    const ent = { seg: c.seg_id, text, orig: c.original, final: c.final, ts: performance.now() };
+    const late = c.latency_ms >= LATE_MS ? Math.round(c.latency_ms / 1000) : 0;
+    const ent = { seg: c.seg_id, text, orig: c.original, final: c.final, ts: performance.now(), late };
     if (i >= 0) entries[i] = ent; else entries.push(ent);
     entries.sort((a, b) => a.seg - b.seg);
     const max = S ? Math.max(1, S.lines) : 2;
@@ -128,6 +140,11 @@
 
   // ---------------------------------------------------------------- başlangıç
   listen('caption', ev => onCaption(ev.payload));
+  listen('paused', ev => {
+    entries = [];
+    render();
+    if (!ev.payload) resumedAt = performance.now();
+  });
   listen('settings', ev => { S = ev.payload; applyStyle(); render(); });
   listen('status', ev => showStatus(ev.payload));
   invoke('get_settings').then(s => { S = s; applyStyle(); });

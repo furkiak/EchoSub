@@ -34,6 +34,10 @@ pub struct Settings {
     /// Altyazı alanındaki tıklamalar alttaki pencereye geçsin; yalnızca üst
     /// şerit ve kenarlar (sürükleme/boyutlandırma/düğmeler) tıklanabilir kalır.
     pub click_through: bool,
+    /// Sırada bundan uzun bekleyen cümle atılır (en yenisi hariç); 0 = atılmaz.
+    pub max_caption_age_secs: f32,
+    /// Altyazıyı gizleyen/gösteren global kısayol, ör. "Ctrl+Shift+F11"; boş = kapalı.
+    pub hotkey: String,
 }
 
 impl Default for Settings {
@@ -57,6 +61,8 @@ impl Default for Settings {
             use_vad: true,
             use_separation: true,
             click_through: true,
+            max_caption_age_secs: 15.0,
+            hotkey: "Ctrl+Shift+F11".into(),
         }
     }
 }
@@ -148,6 +154,16 @@ mod tests {
         assert_eq!(s.model_files().1, "translategemma-12b-it-Q4_K_M.gguf");
         s.quality = "bilinmeyen".into();
         assert_eq!(s.model_files(), Settings::default().model_files());
+    }
+
+    #[test]
+    fn hotkeys_from_the_settings_window_can_be_parsed() {
+        use tauri_plugin_global_shortcut::Shortcut;
+        assert!(Settings::default().hotkey.parse::<Shortcut>().is_ok());
+        // Ayarlar penceresi KeyboardEvent.code değerlerini yazar.
+        for k in ["Ctrl+Shift+KeyE", "Alt+Digit1", "F9", "Super+Space", "Ctrl+Numpad1", "Shift+Semicolon"] {
+            assert!(k.parse::<Shortcut>().is_ok(), "{k}");
+        }
     }
 
     #[test]

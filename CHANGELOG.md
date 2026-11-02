@@ -4,6 +4,13 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.3.0]
+### Added
+- Global hotkey (`Ctrl+Shift+F11` by default, changeable in Settings) hides or shows the captions. While hidden, audio is ignored and nothing is sent to the GPU; the models stay loaded so captions return instantly. On Windows, showing them does not take keyboard focus.
+- Starting EchoSub a second time brings back hidden captions.
+- Sentences that have waited in line for more than 15 s are dropped, except the newest one (*Settings → En eski altyazı*, 0 keeps every sentence).
+- A caption that arrives 5 s or more late shows its delay, for example `+12 sn`.
+
 ## [0.2.1]
 ### Fixed
 - Release packages crashed with "illegal instruction" (the speech model never loaded) on CPUs that differ from the CI machine: the whisper.cpp / llama.cpp servers were built with the CI runner's CPU extensions. They are now built for a portable AVX2 baseline on x86-64.

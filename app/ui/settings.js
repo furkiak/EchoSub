@@ -15,6 +15,7 @@
     outline_color: 'v', bg_color: 'v',
     show_original: 'c', use_vad: 'c', use_separation: 'c', click_through: 'c', auto_fit: 'c', bold: 'c',
     font_scale: 'n', outline_width: 'n', bg_opacity: 'n', lines: 'n', hide_after_secs: 'n',
+    max_caption_age_secs: 'n',
   };
 
   let S = await invoke('get_settings');
@@ -27,6 +28,7 @@
     for (const k of ['font_scale', 'outline_width', 'bg_opacity']) {
       $(k + '_v').textContent = k === 'bg_opacity' ? Math.round(S[k] * 100) + '%' : (+S[k]).toFixed(2).replace(/\.?0+$/, '');
     }
+    $('hotkey').value = S.hotkey ? S.hotkey.replace(/\b(Key|Digit)/g, '') : 'Kapalı';
     $('scale_label').textContent = S.auto_fit ? 'Yazı boyutu (pencereye göre)' : 'Yazı boyutu (çarpan)';
     $('font_scale').max = S.auto_fit ? '1' : '3';
     preview();
@@ -59,12 +61,26 @@
       const n = parseFloat(el.value);
       if (t === 'n' && !Number.isFinite(n)) return; // sayı alanı yazılırken boş kalabilir
       S[k] = t === 'c' ? el.checked : t === 'n' ? n : el.value;
+      if (k === 'max_caption_age_secs') S[k] = Math.max(0, S[k]);
       if (k === 'lines') S[k] = Math.max(1, Math.min(6, Math.round(S[k] || 2)));
       if (k === 'auto_fit') S.font_scale = S.auto_fit ? Math.min(1, S.font_scale) : S.font_scale;
       fill();
       push();
     });
   }
+
+  // ev.code klavye düzeninden bağımsızdır ve Rust'taki kısayol ayrıştırıcısı aynı adları tanır.
+  $('hotkey').addEventListener('keydown', ev => {
+    ev.preventDefault();
+    if (['Control', 'Shift', 'Alt', 'Meta'].includes(ev.key)) return;
+    const mods = [ev.ctrlKey && 'Ctrl', ev.altKey && 'Alt', ev.shiftKey && 'Shift', ev.metaKey && 'Super'].filter(Boolean);
+    if (!mods.length && ev.key === 'Escape') { ev.target.blur(); return; }
+    if (!mods.length && (ev.key === 'Delete' || ev.key === 'Backspace')) S.hotkey = '';
+    else if (mods.length || /^F\d+$/.test(ev.code)) S.hotkey = [...mods, ev.code].join('+');
+    else return; // Tek harf global kısayol olursa başka yerde yazı yazılamaz.
+    fill();
+    push();
+  });
 
   $('open_models').addEventListener('click', () => invoke('open_models'));
 
